@@ -1,0 +1,15 @@
+{
+  "blender_version": "5.2.1",
+  "blender_series": "5.2",
+  "download_base_url": "https://download.blender.org/release",
+  "linux_x64_filename": "blender-5.2.1-linux-x64.tar.xz",
+  "checksum_filename": "blender-5.2.1.sha256",
+  "install_dir": "blender_bin",
+  "render_engine": "CYCLES",
+  "render_device": "CPU",
+  "render_samples": 32,
+  "render_resolution": [1280, 720],
+  "max_job_timeout_minutes": 25,
+  "supported_export_formats": ["blend", "glb", "obj", "fbx"],
+  "notes": "Versão e nomes de ficheiro usados pelo workflow blender.yml para descarregar o Blender oficial de download.blender.org. Atualiza estes valores quando quiseres mudar de versão do Blender — nada mais no projeto precisa de ser alterado."
+}
