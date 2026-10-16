@@ -79,12 +79,7 @@ jobs:
           OPERATION_OVERRIDE="${{ inputs.operation }}"
           WORK_FILE="$(mktemp --suffix=.json)"
           if [ -n "$OPERATION_OVERRIDE" ]; then
-            python3 -c "
-import json
-job = json.load(open('$JOB_FILE', encoding='utf-8'))
-job['operation'] = '$OPERATION_OVERRIDE'
-json.dump(job, open('$WORK_FILE', 'w', encoding='utf-8'))
-"
+            python3 -c "import json; job = json.load(open('$JOB_FILE', encoding='utf-8')); job['operation'] = '$OPERATION_OVERRIDE'; json.dump(job, open('$WORK_FILE', 'w', encoding='utf-8'))"
             echo "Operação substituída para: $OPERATION_OVERRIDE"
           else
             cp "$JOB_FILE" "$WORK_FILE"
