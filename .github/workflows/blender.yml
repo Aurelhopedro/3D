@@ -1,0 +1,195 @@
+name: Blender 3D Pipeline
+
+on:
+  workflow_dispatch:
+    inputs:
+      job_file:
+        description: "Caminho do ficheiro de trabalho JSON (relativo à raiz do repo)"
+        required: false
+        default: "jobs/example.json"
+        type: string
+      operation:
+        description: "Substituir a operação do job (opcional; vazio = usa a do próprio ficheiro JSON)"
+        required: false
+        default: ""
+        type: choice
+        options:
+          - ""
+          - create_model
+          - modify_model
+          - apply_material
+          - optimize_model
+          - animate_model
+          - render_model
+          - export_model
+          - validate_model
+      publish_release:
+        description: "Publicar os resultados como GitHub Release?"
+        required: false
+        default: false
+        type: boolean
+
+permissions:
+  contents: write
+
+concurrency:
+  group: blender-job-${{ github.run_id }}
+  cancel-in-progress: false
+
+jobs:
+  run-blender-job:
+    runs-on: ubuntu-latest
+    timeout-minutes: 30
+    steps:
+      - name: Checkout do repositório
+        uses: actions/checkout@v4
+
+      - name: Ler configuração do Blender
+        id: config
+        run: |
+          VERSION=$(python3 -c "import json;print(json.load(open('config/blender.json'))['blender_version'])")
+          SERIES=$(python3 -c "import json;print(json.load(open('config/blender.json'))['blender_series'])")
+          FILENAME=$(python3 -c "import json;print(json.load(open('config/blender.json'))['linux_x64_filename'])")
+          CHECKSUM_FILE=$(python3 -c "import json;print(json.load(open('config/blender.json'))['checksum_filename'])")
+          echo "version=$VERSION" >> "$GITHUB_OUTPUT"
+          echo "series=$SERIES" >> "$GITHUB_OUTPUT"
+          echo "filename=$FILENAME" >> "$GITHUB_OUTPUT"
+          echo "checksum_file=$CHECKSUM_FILE" >> "$GITHUB_OUTPUT"
+
+      - name: Validar ficheiro de trabalho
+        id: read_job
+        run: |
+          JOB_FILE="${{ inputs.job_file }}"
+          case "$JOB_FILE" in
+            *".."*) echo "Caminho inválido (não pode conter '..'): $JOB_FILE" >&2; exit 1 ;;
+          esac
+          if [ ! -f "$JOB_FILE" ]; then
+            echo "Ficheiro de trabalho '$JOB_FILE' não existe no repositório." >&2
+            exit 1
+          fi
+          JOB_ID=$(python3 -c "import json;print(json.load(open('$JOB_FILE'))['job_id'])")
+          echo "job_id=$JOB_ID" >> "$GITHUB_OUTPUT"
+          echo "job_file=$JOB_FILE" >> "$GITHUB_OUTPUT"
+          echo "Job validado: $JOB_ID"
+
+      - name: Preparar job (aplica override de operação, se fornecido)
+        id: prepare_job
+        run: |
+          JOB_FILE="${{ steps.read_job.outputs.job_file }}"
+          OPERATION_OVERRIDE="${{ inputs.operation }}"
+          WORK_FILE="$(mktemp --suffix=.json)"
+          if [ -n "$OPERATION_OVERRIDE" ]; then
+            python3 -c "
+import json
+job = json.load(open('$JOB_FILE', encoding='utf-8'))
+job['operation'] = '$OPERATION_OVERRIDE'
+json.dump(job, open('$WORK_FILE', 'w', encoding='utf-8'))
+"
+            echo "Operação substituída para: $OPERATION_OVERRIDE"
+          else
+            cp "$JOB_FILE" "$WORK_FILE"
+          fi
+          echo "work_file=$WORK_FILE" >> "$GITHUB_OUTPUT"
+
+      - name: Cache do Blender
+        id: cache_blender
+        uses: actions/cache@v4
+        with:
+          path: blender_bin
+          key: blender-${{ steps.config.outputs.version }}-linux-x64
+
+      - name: Descarregar Blender ${{ steps.config.outputs.version }}
+        if: steps.cache_blender.outputs.cache-hit != 'true'
+        run: |
+          set -euo pipefail
+          BASE_URL="https://download.blender.org/release/Blender${{ steps.config.outputs.series }}"
+          FILENAME="${{ steps.config.outputs.filename }}"
+          CHECKSUM_FILE="${{ steps.config.outputs.checksum_file }}"
+
+          echo "A descarregar $BASE_URL/$FILENAME"
+          curl -fL --retry 3 --retry-delay 5 -o "$FILENAME" "$BASE_URL/$FILENAME"
+
+          echo "A descarregar checksums oficiais: $CHECKSUM_FILE"
+          if curl -fL --retry 3 --retry-delay 5 -o "$CHECKSUM_FILE" "$BASE_URL/$CHECKSUM_FILE"; then
+            EXPECTED=$(grep "$FILENAME" "$CHECKSUM_FILE" | awk '{print $1}')
+            if [ -z "$EXPECTED" ]; then
+              echo "AVISO: não encontrei o hash de '$FILENAME' em '$CHECKSUM_FILE'. A continuar sem verificação." >&2
+            else
+              echo "$EXPECTED  $FILENAME" | sha256sum -c -
+              echo "Checksum verificado com sucesso."
+            fi
+          else
+            echo "AVISO: ficheiro de checksums não disponível para esta versão. A continuar sem verificação." >&2
+          fi
+
+          mkdir -p blender_bin
+          tar -xJf "$FILENAME" -C blender_bin --strip-components=1
+          rm -f "$FILENAME" "$CHECKSUM_FILE"
+
+      - name: Confirmar que o Blender funciona
+        run: ./blender_bin/blender --version
+
+      - name: Executar o job Blender
+        id: run_job
+        continue-on-error: true
+        run: |
+          mkdir -p "output/${{ steps.read_job.outputs.job_id }}"
+          ./blender_bin/blender --background --factory-startup --python scripts/main.py -- \
+            "${{ steps.prepare_job.outputs.work_file }}" \
+            "output/${{ steps.read_job.outputs.job_id }}"
+
+      - name: Mostrar metadata.json
+        if: always()
+        run: |
+          META="output/${{ steps.read_job.outputs.job_id }}/metadata.json"
+          if [ -f "$META" ]; then
+            cat "$META"
+          else
+            echo "metadata.json não foi gerado — a operação falhou antes da validação final." >&2
+          fi
+
+      - name: Publicar artefactos do workflow
+        if: always()
+        uses: actions/upload-artifact@v4
+        with:
+          name: blender-job-${{ steps.read_job.outputs.job_id }}
+          path: output/${{ steps.read_job.outputs.job_id }}
+          if-no-files-found: warn
+          retention-days: 30
+
+      - name: Publicar GitHub Release
+        if: ${{ always() && inputs.publish_release == true && steps.run_job.outcome == 'success' }}
+        env:
+          GH_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+        run: |
+          set -euo pipefail
+          JOB_ID="${{ steps.read_job.outputs.job_id }}"
+          TAG="3d-model-${JOB_ID}"
+          OUT_DIR="output/${JOB_ID}"
+
+          ASSETS=()
+          for f in model.blend model.glb model.obj model.fbx preview.png metadata.json; do
+            if [ -f "$OUT_DIR/$f" ]; then
+              ASSETS+=("$OUT_DIR/$f")
+            fi
+          done
+
+          if [ "${#ASSETS[@]}" -eq 0 ]; then
+            echo "Nenhum ficheiro para publicar; a saltar a criação do Release." >&2
+            exit 0
+          fi
+
+          if gh release view "$TAG" >/dev/null 2>&1; then
+            echo "Release '$TAG' já existe — a tentar adicionar ficheiros em falta (sem sobrescrever)."
+            gh release upload "$TAG" "${ASSETS[@]}" || echo "Alguns ficheiros já existiam no Release e não foram sobrescritos." >&2
+          else
+            gh release create "$TAG" "${ASSETS[@]}" \
+              --title "Modelo 3D: $JOB_ID" \
+              --notes "Gerado automaticamente pelo workflow Blender 3D Pipeline a partir de ${{ steps.read_job.outputs.job_file }}."
+          fi
+
+      - name: Falhar o workflow se o job Blender falhou
+        if: steps.run_job.outcome != 'success'
+        run: |
+          echo "O job Blender terminou com erro — ver 'Mostrar metadata.json' e os logs acima." >&2
+          exit 1
