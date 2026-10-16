@@ -1,0 +1,73 @@
+name: Customize Human - Experimental
+
+on:
+  workflow_dispatch:
+
+permissions:
+  contents: read
+
+jobs:
+  customize:
+    runs-on: ubuntu-latest
+    timeout-minutes: 45
+    steps:
+      - name: Checkout repository
+        uses: actions/checkout@v4
+      - name: Verify inputs
+        run: |
+          set -euo pipefail
+          for file in \
+            assets/characters/human_base/base.obj \
+            assets/characters/human_base/targets/macrodetails/caucasian-female-old.target \
+            assets/characters/human_base/targets/head/head-age-decr.target \
+            scripts/characters/customize_human.py \
+            config/blender.json; do
+            test -s "$file" || { echo "Missing or empty: $file"; exit 1; }
+          done
+      - name: Read Blender configuration
+        id: cfg
+        run: |
+          python3 - <<'PY' >> "$GITHUB_OUTPUT"
+          import json
+          c = json.load(open('config/blender.json'))
+          for key in ('blender_version', 'blender_series', 'linux_x64_filename', 'checksum_filename'):
+              print(f'{key}={c[key]}')
+          PY
+      - name: Cache Blender
+        id: blender-cache
+        uses: actions/cache@v4
+        with:
+          path: blender_bin
+          key: blender-${{ steps.cfg.outputs.blender_version }}-linux-x64
+      - name: Download and verify Blender
+        if: steps.blender-cache.outputs.cache-hit != 'true'
+        run: |
+          set -euo pipefail
+          BASE="https://download.blender.org/release/Blender${{ steps.cfg.outputs.blender_series }}"
+          FILE="${{ steps.cfg.outputs.linux_x64_filename }}"
+          SHA="${{ steps.cfg.outputs.checksum_filename }}"
+          curl -fL --retry 3 -o "$FILE" "$BASE/$FILE"
+          curl -fL --retry 3 -o "$SHA" "$BASE/$SHA"
+          EXPECTED=$(grep -F "$FILE" "$SHA" | awk '{print $1}')
+          test -n "$EXPECTED"
+          echo "$EXPECTED  $FILE" | sha256sum -c -
+          mkdir -p blender_bin
+          tar -xJf "$FILE" -C blender_bin --strip-components=1
+      - name: Apply MakeHuman targets and export
+        run: |
+          set -euo pipefail
+          mkdir -p output/customized
+          ./blender_bin/blender --background --factory-startup --python-exit-code 1 \
+            --python scripts/characters/customize_human.py -- \
+            assets/characters/human_base/base.obj output/customized
+          for file in customized-human.blend customized-human.glb preview.png metadata.json; do
+            test -s "output/customized/$file" || { echo "Missing output: $file"; exit 1; }
+          done
+          ls -lh output/customized/
+      - name: Upload outputs
+        uses: actions/upload-artifact@v4
+        with:
+          name: customized-human-experimental
+          path: output/customized/
+          if-no-files-found: error
+          retention-days: 30
