@@ -293,17 +293,33 @@ try:
     }
 
     # ── ESCALA PARA 1,70 m ───────────────────────────────────────────────────
-    local_z = evaluated_z_coords(human)
-    h_local = max(local_z) - min(local_z)
-    if h_local <= 0:
-        raise RuntimeError("Altura local inválida antes da escala")
+    # 1. Calcular a altura inicial em coordenadas de MUNDO:
+    #    usa a geometria avaliada (shape keys) × matrix_world actual,
+    #    evitando confundir escala local acumulada com altura real.
+    bpy.context.view_layer.update()
+    mw = human.matrix_world
+    ev_obj = human.evaluated_get(bpy.context.evaluated_depsgraph_get())
+    ev_mesh = ev_obj.to_mesh()
+    try:
+        world_z_before = [(mw @ v.co).z for v in ev_mesh.vertices]
+    finally:
+        ev_obj.to_mesh_clear()
 
-    scale_factor = TARGET_HEIGHT_M / h_local
-    human.scale = (scale_factor, scale_factor, scale_factor)
+    h_world_initial = max(world_z_before) - min(world_z_before)
+    if h_world_initial <= 0:
+        raise RuntimeError(f"Altura inicial em mundo inválida: {h_world_initial}")
+
+    # 2. Calcular e aplicar o factor UMA ÚNICA VEZ sobre a escala de mundo.
+    scale_factor = TARGET_HEIGHT_M / h_world_initial
+    human.scale = (
+        human.scale.x * scale_factor,
+        human.scale.y * scale_factor,
+        human.scale.z * scale_factor,
+    )
     apply_transforms(human)
     bpy.context.view_layer.update()
 
-    # Mede altura em coordenadas de MUNDO após transform_apply
+    # 3. Medir a altura final em coordenadas de mundo (vértices reais, pós-apply).
     wc_z = [v.z for v in world_coords(human)]
     world_height = max(wc_z) - min(wc_z)
     body_min_z = min(wc_z)
@@ -316,9 +332,9 @@ try:
         )
 
     report["components"]["height"] = {
-        "local_before_scale_m": h_local,
+        "world_height_initial_m": h_world_initial,
         "scale_factor": scale_factor,
-        "world_height_m": world_height,
+        "world_height_final_m": world_height,
         "body_min_z": body_min_z,
         "body_max_z": body_max_z,
         "within_tolerance": True
