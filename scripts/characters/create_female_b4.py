@@ -4,7 +4,7 @@ B4 — Primeira modelo feminina completa (versão revista).
 Estado de cada secção:
   MPFB install     — confirmado por execução anterior (B3.2)
   Morph feminino   — confirmado por execução anterior (B3.2)
-  Escala 1,70 m    — confirmado por execução anterior (B3.2)
+  Escala 1,70 m    — CORRIGIDA B4.2 (escala directa em vértices via bmesh)
   Altura em coords mundo — nova verificação, hipótese técnica
   Material de pele — nova funcionalidade, hipótese técnica
   Vestido          — nova funcionalidade, hipótese técnica
@@ -33,7 +33,7 @@ from mathutils import Vector, Matrix
 # ─────────────────────────────────────────────────────────────────────────────
 
 TARGET_HEIGHT_M = 1.70
-HEIGHT_TOLERANCE_M = 0.03      # ±3 cm é aceitável
+HEIGHT_TOLERANCE_M = 0.01      # ±1 cm (mais rigoroso)
 
 # Cores em sRGB hexadecimal — convertidas para linear no utilitário abaixo
 COLOR_SKIN   = "#A66A48"
@@ -60,17 +60,12 @@ report = {
 # ─────────────────────────────────────────────────────────────────────────────
 
 def srgb_to_linear(c: float) -> float:
-    """
-    Conversão IEC 61966-2-1: sRGB [0,1] → RGB linear.
-    Idêntica à função em scripts/materials.py (confirmada no repositório).
-    """
     if c <= 0.04045:
         return c / 12.92
     return ((c + 0.055) / 1.055) ** 2.4
 
 
 def hex_to_linear_rgba(hex_color: str, alpha: float = 1.0) -> tuple:
-    """Converte '#RRGGBB' para tuplo RGBA linear para uso no Blender."""
     h = hex_color.lstrip("#")
     if len(h) == 3:
         h = "".join(c * 2 for c in h)
@@ -87,10 +82,6 @@ def make_material(name: str, hex_color: str,
                   metallic: float = 0.0,
                   alpha: float = 1.0,
                   subsurface: float = 0.0) -> bpy.types.Material:
-    """
-    Cria um material Principled BSDF com conversão sRGB correcta.
-    Compatível com exportação GLB (KHR_materials_transmission não é usado).
-    """
     mat = bpy.data.materials.new(name=name)
     mat.use_nodes = True
     nodes = mat.node_tree.nodes
@@ -103,20 +94,17 @@ def make_material(name: str, hex_color: str,
     bsdf.inputs["Roughness"].default_value = roughness
     bsdf.inputs["Metallic"].default_value = metallic
 
-    # Blender 5 — nome do input de Specular mudou para "Specular IOR Level"
     for spec_name in ("Specular IOR Level", "Specular"):
         if spec_name in bsdf.inputs:
             bsdf.inputs[spec_name].default_value = 0.5
             break
 
-    # Subsurface (pele)
     if subsurface > 0.0:
         for ss_name in ("Subsurface Weight", "Subsurface"):
             if ss_name in bsdf.inputs:
                 bsdf.inputs[ss_name].default_value = subsurface
                 break
 
-    # Transparência
     if alpha < 1.0:
         if "Alpha" in bsdf.inputs:
             bsdf.inputs["Alpha"].default_value = alpha
@@ -130,24 +118,17 @@ def make_material(name: str, hex_color: str,
 
 def assign_material(obj: bpy.types.Object, mat: bpy.types.Material,
                     slot: int = 0) -> None:
-    """Atribui material ao slot indicado, criando-o se necessário."""
     while len(obj.data.materials) <= slot:
         obj.data.materials.append(None)
     obj.data.materials[slot] = mat
 
 
 def world_coords(obj: bpy.types.Object) -> list:
-    """
-    Devolve coordenadas de mundo de todos os vértices do objecto,
-    aplicando matrix_world. Usa a malha em modo OBJECT (sem depsgraph)
-    porque o objecto já teve transform_apply.
-    """
     mw = obj.matrix_world
     return [mw @ v.co for v in obj.data.vertices]
 
 
 def world_bounds(obj: bpy.types.Object) -> dict:
-    """Bounds em coordenadas de mundo."""
     wc = world_coords(obj)
     return {
         "min_x": min(v.x for v in wc),
@@ -160,10 +141,6 @@ def world_bounds(obj: bpy.types.Object) -> dict:
 
 
 def evaluated_z_coords(obj: bpy.types.Object) -> list:
-    """
-    Coordenadas Z avaliadas (shape keys aplicados) em espaço local.
-    Usado antes de transform_apply para calcular a escala.
-    """
     bpy.context.view_layer.update()
     ev = obj.evaluated_get(bpy.context.evaluated_depsgraph_get())
     mesh = ev.to_mesh()
@@ -186,6 +163,54 @@ def set_active(obj: bpy.types.Object):
 def apply_transforms(obj: bpy.types.Object):
     set_active(obj)
     bpy.ops.object.transform_apply(location=False, rotation=False, scale=True)
+
+
+def scale_mesh_to_height(obj: bpy.types.Object, target_h: float) -> dict:
+    """
+    Abordagem definitiva:
+    1. Aplica todos os transforms pendentes (location + rotation + scale).
+    2. Mede a altura real em vértices da malha (espaço local == mundo após apply).
+    3. Calcula o factor e escala os vértices DIRECTAMENTE via bmesh — sem tocar
+       em obj.scale, eliminando qualquer ambiguidade de coordenadas.
+    4. Mede novamente e devolve o relatório.
+    """
+    # Passo 1 — garantir tudo aplicado
+    set_active(obj)
+    bpy.ops.object.transform_apply(location=True, rotation=True, scale=True)
+    bpy.context.view_layer.update()
+
+    # Passo 2 — altura inicial (local == mundo porque scale=(1,1,1) após apply)
+    vz = [v.co.z for v in obj.data.vertices]
+    h_initial = max(vz) - min(vz)
+    if h_initial <= 0:
+        raise RuntimeError(f"Altura inicial inválida após apply: {h_initial}")
+
+    # Passo 3 — escalar vértices directamente
+    factor = target_h / h_initial
+    bpy.ops.object.mode_set(mode="EDIT")
+    bm = bmesh.from_edit_mesh(obj.data)
+    bm.verts.ensure_lookup_table()
+    z_min = min(v.co.z for v in bm.verts)
+    for v in bm.verts:
+        # escala em torno do ponto mais baixo (pés), preservando posição no chão
+        v.co.z = z_min + (v.co.z - z_min) * factor
+        v.co.x *= factor
+        v.co.y *= factor
+    bmesh.update_edit_mesh(obj.data)
+    bpy.ops.object.mode_set(mode="OBJECT")
+    bpy.context.view_layer.update()
+
+    # Passo 4 — medir resultado final
+    vz2 = [v.co.z for v in obj.data.vertices]
+    h_final = max(vz2) - min(vz2)
+
+    return {
+        "h_initial_m": h_initial,
+        "factor": factor,
+        "h_final_m": h_final,
+        "body_min_z": min(vz2),
+        "body_max_z": max(vz2),
+    }
 
 
 # ─────────────────────────────────────────────────────────────────────────────
@@ -293,37 +318,15 @@ try:
     }
 
     # ── ESCALA PARA 1,70 m ───────────────────────────────────────────────────
-    # 1. Calcular a altura inicial em coordenadas de MUNDO:
-    #    usa a geometria avaliada (shape keys) × matrix_world actual,
-    #    evitando confundir escala local acumulada com altura real.
-    bpy.context.view_layer.update()
-    mw = human.matrix_world
-    ev_obj = human.evaluated_get(bpy.context.evaluated_depsgraph_get())
-    ev_mesh = ev_obj.to_mesh()
-    try:
-        world_z_before = [(mw @ v.co).z for v in ev_mesh.vertices]
-    finally:
-        ev_obj.to_mesh_clear()
+    # Estratégia B4.2: aplicar todos os transforms primeiro, depois escalar
+    # os vértices directamente via bmesh — elimina qualquer ambiguidade entre
+    # coordenadas locais e de mundo, e garante que o factor é aplicado uma
+    # única vez sobre a geometria real.
+    height_info = scale_mesh_to_height(human, TARGET_HEIGHT_M)
 
-    h_world_initial = max(world_z_before) - min(world_z_before)
-    if h_world_initial <= 0:
-        raise RuntimeError(f"Altura inicial em mundo inválida: {h_world_initial}")
-
-    # 2. Calcular e aplicar o factor UMA ÚNICA VEZ sobre a escala de mundo.
-    scale_factor = TARGET_HEIGHT_M / h_world_initial
-    human.scale = (
-        human.scale.x * scale_factor,
-        human.scale.y * scale_factor,
-        human.scale.z * scale_factor,
-    )
-    apply_transforms(human)
-    bpy.context.view_layer.update()
-
-    # 3. Medir a altura final em coordenadas de mundo (vértices reais, pós-apply).
-    wc_z = [v.z for v in world_coords(human)]
-    world_height = max(wc_z) - min(wc_z)
-    body_min_z = min(wc_z)
-    body_max_z = max(wc_z)
+    world_height = height_info["h_final_m"]
+    body_min_z   = height_info["body_min_z"]
+    body_max_z   = height_info["body_max_z"]
 
     if abs(world_height - TARGET_HEIGHT_M) > HEIGHT_TOLERANCE_M:
         raise RuntimeError(
@@ -332,12 +335,13 @@ try:
         )
 
     report["components"]["height"] = {
-        "world_height_initial_m": h_world_initial,
-        "scale_factor": scale_factor,
-        "world_height_final_m": world_height,
-        "body_min_z": body_min_z,
-        "body_max_z": body_max_z,
-        "within_tolerance": True
+        "world_height_initial_m": height_info["h_initial_m"],
+        "scale_factor":           height_info["factor"],
+        "world_height_final_m":   world_height,
+        "body_min_z":             body_min_z,
+        "body_max_z":             body_max_z,
+        "within_tolerance":       True,
+        "method":                 "bmesh_vertex_scale"
     }
 
     # ── REFERÊNCIAS DE PROPORÇÃO ─────────────────────────────────────────────
@@ -368,7 +372,6 @@ try:
 
     dress_mat = make_material("B4_Dress", COLOR_DRESS, roughness=0.75)
 
-    # — Corpete (cintura → ombros) —
     bodice_h = shoulder_z - waist_z
     bodice_cz = waist_z + bodice_h / 2.0
 
@@ -395,7 +398,6 @@ try:
     assign_material(bodice, dress_mat)
     apply_transforms(bodice)
 
-    # — Saia (joelho → cintura) —
     skirt_h = waist_z - knee_z
     skirt_cz = knee_z + skirt_h / 2.0
 
