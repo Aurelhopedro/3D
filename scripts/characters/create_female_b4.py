@@ -174,25 +174,21 @@ def scale_mesh_to_height(obj: bpy.types.Object, target_h: float) -> dict:
        em obj.scale, eliminando qualquer ambiguidade de coordenadas.
     4. Mede novamente e devolve o relatório.
     """
-    # Passo 1 — garantir tudo aplicado
     set_active(obj)
     bpy.ops.object.transform_apply(location=True, rotation=True, scale=True)
     bpy.context.view_layer.update()
 
-    # Passo 2 — altura inicial (local == mundo porque scale=(1,1,1) após apply)
     vz = [v.co.z for v in obj.data.vertices]
     h_initial = max(vz) - min(vz)
     if h_initial <= 0:
         raise RuntimeError(f"Altura inicial inválida após apply: {h_initial}")
 
-    # Passo 3 — escalar vértices directamente
     factor = target_h / h_initial
     bpy.ops.object.mode_set(mode="EDIT")
     bm = bmesh.from_edit_mesh(obj.data)
     bm.verts.ensure_lookup_table()
     z_min = min(v.co.z for v in bm.verts)
     for v in bm.verts:
-        # escala em torno do ponto mais baixo (pés), preservando posição no chão
         v.co.z = z_min + (v.co.z - z_min) * factor
         v.co.x *= factor
         v.co.y *= factor
@@ -200,7 +196,6 @@ def scale_mesh_to_height(obj: bpy.types.Object, target_h: float) -> dict:
     bpy.ops.object.mode_set(mode="OBJECT")
     bpy.context.view_layer.update()
 
-    # Passo 4 — medir resultado final
     vz2 = [v.co.z for v in obj.data.vertices]
     h_final = max(vz2) - min(vz2)
 
@@ -318,10 +313,6 @@ try:
     }
 
     # ── ESCALA PARA 1,70 m ───────────────────────────────────────────────────
-    # Estratégia B4.2: aplicar todos os transforms primeiro, depois escalar
-    # os vértices directamente via bmesh — elimina qualquer ambiguidade entre
-    # coordenadas locais e de mundo, e garante que o factor é aplicado uma
-    # única vez sobre a geometria real.
     height_info = scale_mesh_to_height(human, TARGET_HEIGHT_M)
 
     world_height = height_info["h_final_m"]
@@ -589,7 +580,7 @@ try:
 
         bm.to_mesh(mesh_data)
         bm.free()
-        mesh_data.calc_normals()
+        # calc_normals() foi removido no Blender 5 — as normais são calculadas automaticamente
         assign_material(shoe_obj, shoe_mat)
 
     report["components"]["shoes"] = {
