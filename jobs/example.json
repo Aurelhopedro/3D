@@ -1,0 +1,14 @@
+{
+  "job_id": "test-001",
+  "operation": "create_model",
+  "parameters": {
+    "type": "cube",
+    "size": 2,
+    "color": "#FF0000"
+  },
+  "outputs": {
+    "blend": true,
+    "glb": true,
+    "preview": true
+  }
+}
