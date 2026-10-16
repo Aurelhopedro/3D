@@ -1,0 +1,76 @@
+name: Character Model Import
+
+on:
+  workflow_dispatch:
+    inputs:
+      source_file:
+        description: 'Existing licensed character file in repo (GLB, GLTF, FBX or OBJ)'
+        required: true
+        default: 'assets/characters/base_female.glb'
+        type: string
+
+permissions:
+  contents: read
+
+jobs:
+  import-character:
+    runs-on: ubuntu-latest
+    timeout-minutes: 30
+    steps:
+      - uses: actions/checkout@v4
+      - name: Validate asset path
+        env:
+          SOURCE_FILE: ${{ inputs.source_file }}
+        run: |
+          python3 - <<'PY'
+          import os
+          p = os.environ['SOURCE_FILE']
+          if os.path.isabs(p) or '..' in p.split('/') or not p.startswith('assets/characters/'):
+              raise SystemExit('Invalid source path: must be inside assets/characters/')
+          if not os.path.isfile(p):
+              raise SystemExit('Character base asset not found: ' + p)
+          PY
+      - name: Read Blender configuration
+        id: cfg
+        run: |
+          python3 - <<'PY' >> "$GITHUB_OUTPUT"
+          import json
+          c=json.load(open('config/blender.json'))
+          for k in ('blender_version','blender_series','linux_x64_filename','checksum_filename'):
+              print(f'{k}={c[k]}')
+          PY
+      - name: Cache Blender
+        id: blender-cache
+        uses: actions/cache@v4
+        with:
+          path: blender_bin
+          key: blender-${{ steps.cfg.outputs.blender_version }}-linux-x64
+      - name: Download Blender
+        if: steps.blender-cache.outputs.cache-hit != 'true'
+        run: |
+          set -euo pipefail
+          BASE="https://download.blender.org/release/Blender${{ steps.cfg.outputs.blender_series }}"
+          FILE="${{ steps.cfg.outputs.linux_x64_filename }}"
+          SHA="${{ steps.cfg.outputs.checksum_filename }}"
+          curl -fL --retry 3 -o "$FILE" "$BASE/$FILE"
+          curl -fL --retry 3 -o "$SHA" "$BASE/$SHA"
+          EXPECTED=$(grep -F "$FILE" "$SHA" | awk '{print $1}')
+          test -n "$EXPECTED"
+          echo "$EXPECTED  $FILE" | sha256sum -c -
+          mkdir -p blender_bin
+          tar -xJf "$FILE" -C blender_bin --strip-components=1
+      - name: Import model and render previews
+        env:
+          SOURCE_FILE: ${{ inputs.source_file }}
+        run: |
+          mkdir -p output/character
+          ./blender_bin/blender --background --factory-startup \
+            --python scripts/characters/import_female.py -- "$SOURCE_FILE" output/character
+      - name: Upload character outputs
+        if: always()
+        uses: actions/upload-artifact@v4
+        with:
+          name: female-character-import
+          path: output/character/
+          if-no-files-found: warn
+          retention-days: 30
