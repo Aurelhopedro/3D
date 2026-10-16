@@ -1,0 +1,31 @@
+# Blender
+*.blend1
+*.blend2
+*.blend@
+blender_bin/
+blender-*.tar.xz
+blender-*.sha256
+blender-*.md5
+
+# Outputs gerados pelos jobs — nunca são commitados; vão para
+# artefactos do workflow e/ou GitHub Releases.
+output/
+outputs/
+*.glb
+*.obj
+*.fbx
+*.png
+!docs/**/*.png
+
+# Python
+__pycache__/
+*.pyc
+*.pyo
+
+# Sistema operativo
+.DS_Store
+Thumbs.db
+
+# Editor
+.vscode/
+.idea/
