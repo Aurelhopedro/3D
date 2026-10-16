@@ -1,0 +1,64 @@
+name: Customize Human - Intermediate Comparison
+on:
+  workflow_dispatch:
+
+permissions:
+  contents: read
+
+jobs:
+  compare:
+    runs-on: ubuntu-latest
+    timeout-minutes: 45
+    steps:
+      - uses: actions/checkout@v4
+      - name: Validate required files
+        run: |
+          set -euo pipefail
+          for file in config/blender.json assets/characters/human_base/base.obj             assets/characters/human_base/targets/macrodetails/caucasian-female-old.target             assets/characters/human_base/targets/head/head-age-decr.target             scripts/characters/compare_human.py; do
+            test -s "$file" || { echo "Missing file: $file"; exit 1; }
+          done
+      - name: Read Blender version
+        id: cfg
+        run: |
+          python3 - <<'PY' >> "$GITHUB_OUTPUT"
+          import json
+          c = json.load(open("config/blender.json"))
+          for k in ("blender_version", "blender_series", "linux_x64_filename", "checksum_filename"):
+              print(f"{k}={c[k]}")
+          PY
+      - name: Cache Blender
+        id: cache
+        uses: actions/cache@v4
+        with:
+          path: blender_bin
+          key: blender-${{ steps.cfg.outputs.blender_version }}-linux-x64
+      - name: Install Blender if not cached
+        if: steps.cache.outputs.cache-hit != 'true'
+        run: |
+          set -euo pipefail
+          BASE="https://download.blender.org/release/Blender${{ steps.cfg.outputs.blender_series }}"
+          FILE="${{ steps.cfg.outputs.linux_x64_filename }}"
+          SHA="${{ steps.cfg.outputs.checksum_filename }}"
+          curl -fL --retry 3 -o "$FILE" "$BASE/$FILE"
+          curl -fL --retry 3 -o "$SHA" "$BASE/$SHA"
+          EXPECTED=$(grep -F "$FILE" "$SHA" | awk '{print $1}')
+          test -n "$EXPECTED"
+          echo "$EXPECTED  $FILE" | sha256sum -c -
+          mkdir -p blender_bin
+          tar -xJf "$FILE" -C blender_bin --strip-components=1
+      - name: Generate original and modified models
+        run: |
+          set -euo pipefail
+          mkdir -p output/comparison
+          ./blender_bin/blender --background --factory-startup --python-exit-code 1             --python scripts/characters/compare_human.py --             assets/characters/human_base/base.obj output/comparison
+          for file in original.glb modified.glb original.png modified.png comparison.blend comparison.json; do
+            test -s "output/comparison/$file" || { echo "Missing output: $file"; exit 1; }
+          done
+          cat output/comparison/comparison.json
+      - name: Upload comparison
+        uses: actions/upload-artifact@v4
+        with:
+          name: human-intermediate-comparison
+          path: output/comparison/
+          if-no-files-found: error
+          retention-days: 30
