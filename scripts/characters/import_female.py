@@ -60,7 +60,10 @@ def main():
     scene.render.resolution_percentage = 100
     scene.render.image_settings.file_format = 'PNG'
     scene.render.film_transparent = False
-    scene.world.color = (0.15, 0.15, 0.15)
+    if scene.world is None:
+    scene.world = bpy.data.worlds.new("CharacterWorld")
+
+scene.world.color = (0.15, 0.15, 0.15)
     bpy.ops.object.camera_add(location=(center.x, center.y - span * 2.5, center.z))
     cam = bpy.context.object
     cam.name = 'CharacterPreviewCamera'
