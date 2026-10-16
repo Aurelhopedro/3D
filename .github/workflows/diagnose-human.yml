@@ -1,0 +1,45 @@
+name: Human 3D - Diagnostico Intermediario
+on:
+  workflow_dispatch:
+permissions:
+  contents: read
+jobs:
+  diagnose:
+    runs-on: ubuntu-latest
+    timeout-minutes: 25
+    steps:
+      - uses: actions/checkout@v4
+      - name: Validate source files
+        run: |
+          set -euo pipefail
+          for f in assets/characters/human_base/base.obj assets/characters/human_base/targets/head/head-age-decr.target assets/characters/human_base/targets/macrodetails/caucasian-female-old.target scripts/characters/diagnose_human.py; do
+            test -s "$f" || { echo "Missing $f"; exit 1; }
+          done
+      - name: Cache Blender
+        id: cache
+        uses: actions/cache@v4
+        with:
+          path: blender_bin
+          key: blender-5.2.1-linux-x64
+      - name: Download Blender
+        if: steps.cache.outputs.cache-hit != 'true'
+        run: |
+          set -euo pipefail
+          curl -fL --retry 3 -o blender.tar.xz https://download.blender.org/release/Blender5.2/blender-5.2.1-linux-x64.tar.xz
+          mkdir -p blender_bin
+          tar -xJf blender.tar.xz -C blender_bin --strip-components=1
+      - name: Generate diagnostic models
+        run: |
+          set -euo pipefail
+          mkdir -p output/diagnostico
+          ./blender_bin/blender --background --factory-startup --python-exit-code 1 --python scripts/characters/diagnose_human.py -- output/diagnostico
+          for f in original.glb modificado.glb mapa_diferencas.glb diagnostico.json comparacao.blend; do
+            test -s "output/diagnostico/$f" || { echo "Missing $f"; exit 1; }
+          done
+          cat output/diagnostico/diagnostico.json
+      - name: Upload diagnostic
+        uses: actions/upload-artifact@v4
+        with:
+          name: human-geometry-diagnostic
+          path: output/diagnostico/
+          if-no-files-found: error
