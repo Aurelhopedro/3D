@@ -4,59 +4,51 @@ on:
   workflow_dispatch:
     inputs:
       source_file:
-        description: 'Character OBJ, GLB, GLTF or FBX inside assets/characters/'
+        description: 'Existing model in assets/characters/ (OBJ, GLB, GLTF, FBX)'
         required: true
         default: 'assets/characters/human_base/base.obj'
         type: string
 
 permissions:
-  contents: write
+  contents: read
 
 jobs:
   import-character:
     runs-on: ubuntu-latest
-    timeout-minutes: 30
+    timeout-minutes: 45
     steps:
       - name: Checkout repository
         uses: actions/checkout@v4
-
       - name: Validate source model
         env:
           SOURCE_FILE: ${{ inputs.source_file }}
         run: |
           python3 - <<'PY'
           import os
-          from pathlib import Path
-          source = Path(os.environ['SOURCE_FILE'])
-          if source.is_absolute() or '..' in source.parts or source.parts[:2] != ('assets', 'characters'):
-              raise SystemExit('Model must be inside assets/characters/')
-          if source.suffix.lower() not in {'.obj', '.glb', '.gltf', '.fbx'}:
-              raise SystemExit('Supported formats: OBJ, GLB, GLTF, FBX')
-          if not source.is_file():
-              raise SystemExit(f'Model not found: {source}')
-          if not Path('scripts/characters/import_female.py').is_file():
-              raise SystemExit('Missing scripts/characters/import_female.py')
-          print(f'Importing {source} ({source.stat().st_size} bytes)')
+          p = os.environ['SOURCE_FILE']
+          if os.path.isabs(p) or '..' in p.split('/') or not p.startswith('assets/characters/'):
+              raise SystemExit('Invalid source path')
+          if os.path.splitext(p)[1].lower() not in ('.obj', '.glb', '.gltf', '.fbx'):
+              raise SystemExit('Unsupported extension')
+          if not os.path.isfile(p):
+              raise SystemExit('Model not found: ' + p)
+          print('Found model:', p, os.path.getsize(p), 'bytes')
           PY
-
       - name: Read Blender configuration
         id: cfg
         run: |
           python3 - <<'PY' >> "$GITHUB_OUTPUT"
           import json
-          with open('config/blender.json', encoding='utf-8') as f:
-              c = json.load(f)
+          c = json.load(open('config/blender.json'))
           for key in ('blender_version', 'blender_series', 'linux_x64_filename', 'checksum_filename'):
               print(f'{key}={c[key]}')
           PY
-
       - name: Cache Blender
         id: blender-cache
         uses: actions/cache@v4
         with:
           path: blender_bin
           key: blender-${{ steps.cfg.outputs.blender_version }}-linux-x64
-
       - name: Download and verify Blender
         if: steps.blender-cache.outputs.cache-hit != 'true'
         run: |
@@ -71,20 +63,26 @@ jobs:
           echo "$EXPECTED  $FILE" | sha256sum -c -
           mkdir -p blender_bin
           tar -xJf "$FILE" -C blender_bin --strip-components=1
-
       - name: Import model and render previews
         env:
           SOURCE_FILE: ${{ inputs.source_file }}
         run: |
+          set -euo pipefail
           mkdir -p output/character
-          ./blender_bin/blender --background --factory-startup \
+          ./blender_bin/blender --background --factory-startup --python-exit-code 1 \
             --python scripts/characters/import_female.py -- "$SOURCE_FILE" output/character
-
+          test -s output/character/female-model.blend
+          test -s output/character/female-model.glb
+          test -s output/character/metadata.json
+          for view in front side back perspective; do
+            test -s "output/character/${view}.png"
+          done
+          ls -lh output/character/
       - name: Upload model outputs
         if: always()
         uses: actions/upload-artifact@v4
         with:
-          name: human-base-import
+          name: female-character-import
           path: output/character/
-          if-no-files-found: warn
+          if-no-files-found: error
           retention-days: 30
