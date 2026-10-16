@@ -1,0 +1,57 @@
+name: Human 3D - Audit Orientation
+on:
+  workflow_dispatch:
+permissions:
+  contents: read
+jobs:
+  audit:
+    runs-on: ubuntu-latest
+    timeout-minutes: 45
+    steps:
+      - uses: actions/checkout@v4
+      - name: Read Blender configuration
+        id: cfg
+        run: |
+          python3 - <<'PY' >> "$GITHUB_OUTPUT"
+          import json
+          c = json.load(open('config/blender.json'))
+          for key in ('blender_version', 'blender_series', 'linux_x64_filename', 'checksum_filename'):
+              print(f'{key}={c[key]}')
+          PY
+      - name: Cache Blender
+        id: blender-cache
+        uses: actions/cache@v4
+        with:
+          path: blender_bin
+          key: blender-${{ steps.cfg.outputs.blender_version }}-linux-x64
+      - name: Download and verify Blender
+        if: steps.blender-cache.outputs.cache-hit != 'true'
+        run: |
+          set -euo pipefail
+          BASE="https://download.blender.org/release/Blender${{ steps.cfg.outputs.blender_series }}"
+          FILE="${{ steps.cfg.outputs.linux_x64_filename }}"
+          SHA="${{ steps.cfg.outputs.checksum_filename }}"
+          curl -fL --retry 3 -o "$FILE" "$BASE/$FILE"
+          curl -fL --retry 3 -o "$SHA" "$BASE/$SHA"
+          EXPECTED=$(grep -F "$FILE" "$SHA" | awk '{print $1}')
+          test -n "$EXPECTED"
+          echo "$EXPECTED  $FILE" | sha256sum -c -
+          mkdir -p blender_bin
+          tar -xJf "$FILE" -C blender_bin --strip-components=1
+      - name: Inspect OBJ and GLB orientation
+        run: |
+          set -euo pipefail
+          test -s assets/characters/human_base/base.obj
+          mkdir -p output/orientation
+          ./blender_bin/blender --background --factory-startup --python-exit-code 1 \
+            --python scripts/characters/audit_orientation.py -- \
+            assets/characters/human_base/base.obj output/orientation
+          test -s output/orientation/orientation-report.json
+          test -s output/orientation/orientation-check.glb
+      - name: Upload orientation report
+        uses: actions/upload-artifact@v4
+        with:
+          name: human-orientation-audit
+          path: output/orientation/
+          if-no-files-found: error
+          retention-days: 30
