@@ -48,7 +48,13 @@ def main():
     height = max(max_xyz.z - min_xyz.z, 0.1)
     span = max(max_xyz.x - min_xyz.x, max_xyz.y - min_xyz.y, height)
     scene = bpy.context.scene
-    scene.render.engine = 'BLENDER_EEVEE_NEXT'
+    # CYCLES com CPU — compatível com todas as versões do Blender 4.x e 5.x,
+    # não requer GPU dedicada, e é consistente com config/blender.json.
+    # BLENDER_EEVEE_NEXT foi removido no Blender 5.x; o motor Eevee passou
+    # a chamar-se 'BLENDER_EEVEE' mas Cycles é mais estável em CI/CD.
+    scene.render.engine = 'CYCLES'
+    scene.cycles.device = 'CPU'
+    scene.cycles.samples = 32
     scene.render.resolution_x = 768
     scene.render.resolution_y = 1024
     scene.render.resolution_percentage = 100
