@@ -1,0 +1,58 @@
+name: MPFB B1 - Installation Test
+on:
+  workflow_dispatch:
+permissions:
+  contents: read
+jobs:
+  test-mpfb:
+    runs-on: ubuntu-latest
+    timeout-minutes: 20
+    steps:
+      - uses: actions/checkout@v4
+      - name: Read Blender configuration
+        id: cfg
+        run: |
+          python3 - <<'PY' >> "$GITHUB_OUTPUT"
+          import json
+          c=json.load(open('config/blender.json'))
+          for k in ('blender_version','blender_series','linux_x64_filename','checksum_filename'):
+              print(f'{k}={c[k]}')
+          PY
+      - name: Restore Blender cache
+        id: blender-cache
+        uses: actions/cache@v4
+        with:
+          path: blender_bin
+          key: blender-${{ steps.cfg.outputs.blender_version }}-linux-x64
+      - name: Download Blender if not cached
+        if: steps.blender-cache.outputs.cache-hit != 'true'
+        run: |
+          set -euo pipefail
+          BASE="https://download.blender.org/release/Blender${{ steps.cfg.outputs.blender_series }}"
+          FILE="${{ steps.cfg.outputs.linux_x64_filename }}"
+          SHA="${{ steps.cfg.outputs.checksum_filename }}"
+          curl -fL --retry 3 -o "$FILE" "$BASE/$FILE"
+          curl -fL --retry 3 -o "$SHA" "$BASE/$SHA"
+          EXPECTED=$(grep -F "$FILE" "$SHA" | awk '{print $1}')
+          test -n "$EXPECTED"
+          echo "$EXPECTED  $FILE" | sha256sum -c -
+          mkdir -p blender_bin
+          tar -xJf "$FILE" -C blender_bin --strip-components=1
+      - name: Download official MPFB extension
+        run: |
+          curl -fL --retry 3 --connect-timeout 20 -o mpfb2.zip https://files.makehumancommunity.org/plugins/mpfb2-latest.zip
+          unzip -t mpfb2.zip | tail -1
+      - name: Test MPFB registration in Blender headless
+        env:
+          MPFB_ZIP: ${{ github.workspace }}/mpfb2.zip
+          MPFB_OUTPUT: ${{ github.workspace }}/output/mpfb-b1
+        run: |
+          mkdir -p output/mpfb-b1
+          ./blender_bin/blender --background --factory-startup --python-exit-code 1 --python scripts/characters/test_mpfb.py
+      - name: Upload diagnosis even on failure
+        if: always()
+        uses: actions/upload-artifact@v4
+        with:
+          name: mpfb-b1-diagnostic
+          path: output/mpfb-b1/mpfb-b1-report.json
+          if-no-files-found: warn
