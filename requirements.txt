@@ -1,0 +1,15 @@
+# Este projeto não depende de pacotes pip para a execução principal.
+#
+# Os scripts em scripts/ correm dentro do interpretador Python embutido
+# no próprio Blender, invocado como:
+#
+#     blender --background --python scripts/main.py -- jobs/example.json
+#
+# O módulo "bpy" já está disponível nesse interpretador porque faz parte
+# da instalação do Blender — NÃO deve ser instalado via pip aqui (o
+# pacote "bpy" que existe no PyPI é uma distribuição diferente e não
+# compatível com esta arquitetura).
+#
+# Mantém este ficheiro para futuras dependências auxiliares, caso venham
+# a existir scripts de apoio que corram FORA do Blender (ex.: validação
+# de esquemas JSON num passo de CI separado).
