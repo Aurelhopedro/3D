@@ -1,0 +1,31 @@
+name: MPFB B3 - Inspect Controls
+on:
+  workflow_dispatch:
+permissions:
+  contents: read
+  actions: read
+jobs:
+  inspect:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/cache/restore@v4
+        with:
+          path: blender_bin
+          key: blender-5.2.1-linux-x64
+          fail-on-cache-miss: true
+      - name: Download B2 model
+        env:
+          GH_TOKEN: ${{ github.token }}
+        run: |
+          mkdir -p input
+          gh run download 38970331769 --repo "${{ github.repository }}" --name mpfb-b2-human-test --dir input
+      - name: Inspect controls
+        env:
+          MPFB_B2_BLEND: ${{ github.workspace }}/input/mpfb-human.blend
+        run: ./blender_bin/blender --background --factory-startup --python-exit-code 1 --python scripts/characters/inspect_mpfb_b3.py
+      - uses: actions/upload-artifact@v4
+        if: always()
+        with:
+          name: mpfb-b3-inspection
+          path: output/mpfb-b3/inspection.json
