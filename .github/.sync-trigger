@@ -1,1 +1,5 @@
-placeholder
+# Este ficheiro não faz parte da arquitetura do projeto.
+# Foi criado apenas como um commit adicional para tentar forçar o GitHub
+# a reindexar o trigger "workflow_dispatch" do workflow blender.yml.
+# Podes apagá-lo em segurança a qualquer momento (ex.: pela interface do
+# GitHub, "Delete file").
