@@ -1,0 +1,144 @@
+name: Diagnose MPFB Eye Geometry
+
+on:
+  push:
+    paths:
+      - ".github/workflows/diagnose-mpfb-eye-geometry.yml"
+      - "scripts/characters/diagnose_mpfb_eye_geometry.py"
+  workflow_dispatch:
+
+permissions:
+  contents: write
+
+jobs:
+  diagnose-eye-geometry:
+    runs-on: ubuntu-latest
+    timeout-minutes: 40
+
+    steps:
+      - name: Checkout
+        uses: actions/checkout@v4
+
+      - name: Restaurar Blender 5.2.1
+        id: blender-cache
+        uses: actions/cache/restore@v4
+        with:
+          path: blender_bin
+          key: blender-5.2.1-linux-x64
+
+      - name: Descarregar Blender 5.2.1 (se não estiver em cache)
+        if: steps.blender-cache.outputs.cache-hit != 'true'
+        run: |
+          set -euo pipefail
+          BASE="https://download.blender.org/release/Blender5.2"
+          FILE="blender-5.2.1-linux-x64.tar.xz"
+          SHA="blender-5.2.1.sha256"
+          curl -fL --retry 3 -o "$FILE" "$BASE/$FILE"
+          curl -fL --retry 3 -o "$SHA"  "$BASE/$SHA"
+          EXPECTED=$(grep -F "$FILE" "$SHA" | awk '{print $1}')
+          test -n "$EXPECTED"
+          echo "$EXPECTED  $FILE" | sha256sum -c -
+          mkdir -p blender_bin
+          tar -xJf "$FILE" -C blender_bin --strip-components=1
+
+      - name: Descarregar MPFB
+        run: curl -fL --retry 3 --retry-delay 5 -o mpfb2.zip https://files.makehumancommunity.org/plugins/mpfb2-latest.zip
+
+      - name: Verificar MPFB
+        run: |
+          if [ ! -f mpfb2.zip ] || [ ! -s mpfb2.zip ]; then
+            echo "Erro: mpfb2.zip não foi descarregado." >&2; exit 1
+          fi
+          echo "MPFB ZIP: $(du -sh mpfb2.zip | cut -f1)"
+
+      - name: Executar diagnóstico de geometria ocular
+        env:
+          MPFB_ZIP:    ${{ github.workspace }}/mpfb2.zip
+          MPFB_OUTPUT: ${{ github.workspace }}/output/diagnose-eye-geometry
+        run: |
+          mkdir -p output/diagnose-eye-geometry
+          ./blender_bin/blender \
+            --background \
+            --factory-startup \
+            --python-exit-code 1 \
+            --python scripts/characters/diagnose_mpfb_eye_geometry.py
+
+      - name: Mostrar relatório nos logs
+        if: always()
+        run: |
+          echo "=== Ficheiros produzidos ==="
+          ls -lh output/diagnose-eye-geometry/ 2>/dev/null || echo "Diretório vazio"
+          echo ""
+          echo "=== Relatório de diagnóstico ==="
+          cat output/diagnose-eye-geometry/diagnose-eye-geometry-report.json 2>/dev/null \
+            | python3 -c "
+          import sys, json
+          try:
+              data = json.load(sys.stdin)
+          except Exception as e:
+              print('Erro ao ler JSON:', e); sys.exit(0)
+          print('Status:', data.get('status'))
+          print('Blender:', data.get('blender'))
+          print()
+          print('=== Grupos de vértices encontrados ===')
+          print('Grupos eye-related:', data.get('eye_related_groups_found', []))
+          print()
+          print('=== Olho Esquerdo (helper-l-eye) ===')
+          le = data.get('left_eye', {})
+          print('  Vértices:', le.get('vertex_count'))
+          print('  Centro:  ', le.get('center'))
+          print('  Dims:    ', le.get('dimensions'))
+          print('  Tipo geo:', le.get('geometry_type'))
+          print('  Faces:   ', le.get('face_count'))
+          print()
+          print('=== Olho Direito (helper-r-eye) ===')
+          re = data.get('right_eye', {})
+          print('  Vértices:', re.get('vertex_count'))
+          print('  Centro:  ', re.get('center'))
+          print('  Tipo geo:', re.get('geometry_type'))
+          print()
+          print('=== Grupos Joint ===')
+          for k, v in data.get('joint_eyes', {}).items():
+              print(f'  {k}: {v.get(\"vertex_count\")} verts, centro={v.get(\"center\")}')
+          print()
+          print('=== Geometria Nativa ===')
+          ng = data.get('native_eye_geometry', {})
+          print('  Detectada:', ng.get('detected'))
+          print('  Tipo:     ', ng.get('geometry_type'))
+          print('  Reutiliz.:', ng.get('reusable'))
+          print('  Notas:')
+          for note in ng.get('notes', []):
+              print('    -', note)
+          print()
+          print('=== Conclusão ===')
+          c = data.get('conclusion', {})
+          print('  Centros verificados:', c.get('eye_centers_verified'))
+          print('  Abordagem B9:       ', c.get('recommended_approach'))
+          print('  Centro esq (B9):    ', c.get('left_eye_center_for_b9'))
+          print('  Centro dir (B9):    ', c.get('right_eye_center_for_b9'))
+          print('  Racional:', c.get('approach_rationale', '')[:120], '...')
+          print()
+          print('=== Reprodutibilidade ===')
+          r = data.get('reproducibility', {})
+          print('  Delta vs diagnóstico anterior:', r.get('delta_m'), 'm')
+          print('  Reproduzível:', r.get('reproducible'))
+          if data.get('errors'):
+              print()
+              print('=== ERROS ===')
+              for e in data['errors']:
+                  print(e)
+          " 2>/dev/null || cat output/diagnose-eye-geometry/diagnose-eye-geometry-report.json 2>/dev/null || echo "Relatório não gerado"
+
+      - name: Publicar artefactos
+        if: always()
+        uses: actions/upload-artifact@v4
+        with:
+          name: diagnose-mpfb-eye-geometry
+          path: |
+            output/diagnose-eye-geometry/diagnose-eye-geometry-report.json
+            output/diagnose-eye-geometry/diag_geo_01_head_front_groups.png
+            output/diagnose-eye-geometry/diag_geo_02_head_side_depth.png
+            output/diagnose-eye-geometry/diag_geo_03_eye_geometry_isolated.png
+            output/diagnose-eye-geometry/diag_geo_04_comparison_markers.png
+          if-no-files-found: warn
+          retention-days: 30
