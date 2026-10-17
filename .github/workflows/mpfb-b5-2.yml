@@ -5,21 +5,18 @@ on:
   push:
     paths:
       - 'scripts/characters/create_female_b5_2.py'
+      - 'scripts/characters/run_female_b5_2.py'
       - '.github/workflows/mpfb-b5-2.yml'
 
 jobs:
   build:
     runs-on: ubuntu-latest
     timeout-minutes: 45
-
     env:
-      BLENDER_VERSION: "5.2.1"
-      BLENDER_URL: "https://mirrors.dotsrc.org/blender/release/Blender5.2/blender-5.2.1-linux-x64.tar.xz"
-      MPFB_OUTPUT: "${{ github.workspace }}/output"
-      # URL directa ao mirror oficial do MPFB (release 2.0.18)
-      MPFB_DIRECT_URL: "https://files2.makehumancommunity.org/releases/mpfb2-v2.0.18.zip"
-      MPFB_FALLBACK_URL: "https://files.makehumancommunity.org/releases/mpfb2-v2.0.18.zip"
-
+      BLENDER_URL: 'https://mirrors.dotsrc.org/blender/release/Blender5.2/blender-5.2.1-linux-x64.tar.xz'
+      MPFB_OUTPUT: '${{ github.workspace }}/output'
+      MPFB_DIRECT_URL: 'https://files2.makehumancommunity.org/releases/mpfb2-v2.0.18.zip'
+      MPFB_FALLBACK_URL: 'https://files.makehumancommunity.org/releases/mpfb2-v2.0.18.zip'
     steps:
       - name: Checkout
         uses: actions/checkout@v4
@@ -30,7 +27,6 @@ jobs:
         with:
           path: blender_bin
           key: blender-5.2.1-linux-x64
-          fail-on-cache-miss: false
 
       - name: Download Blender
         if: steps.cache-blender.outputs.cache-hit != 'true'
@@ -53,66 +49,36 @@ jobs:
         run: |
           mkdir -p /tmp/mpfb_pkg
           if [ -n "$MPFB_ZIP_URL" ]; then
-            echo "Usando URL secreta..."
             wget -q "$MPFB_ZIP_URL" -O /tmp/mpfb_pkg/mpfb.zip
           else
-            echo "Tentando mirror primario: $MPFB_DIRECT_URL"
-            wget -q "$MPFB_DIRECT_URL" -O /tmp/mpfb_pkg/mpfb.zip \
-            || {
-              echo "Mirror primario falhou. Tentando mirror secundario..."
-              wget -q "$MPFB_FALLBACK_URL" -O /tmp/mpfb_pkg/mpfb.zip \
-              || {
-                echo "Ambos os mirrors falharam. Tentando nightly build..."
-                NIGHTLY=$(curl -s https://files2.makehumancommunity.org/plugins/ \
-                  | grep -oP 'mpfb2-[0-9]{8}\.zip' | sort | tail -1)
-                echo "Nightly: $NIGHTLY"
-                wget -q "https://files2.makehumancommunity.org/plugins/$NIGHTLY" \
-                  -O /tmp/mpfb_pkg/mpfb.zip
-              }
-            }
+            wget -q "$MPFB_DIRECT_URL" -O /tmp/mpfb_pkg/mpfb.zip || \
+            wget -q "$MPFB_FALLBACK_URL" -O /tmp/mpfb_pkg/mpfb.zip || \
+            wget -q 'https://files.makehumancommunity.org/plugins/mpfb2-latest.zip' -O /tmp/mpfb_pkg/mpfb.zip
           fi
-          ls -lh /tmp/mpfb_pkg/mpfb.zip
-          echo "MPFB_ZIP=/tmp/mpfb_pkg/mpfb.zip" >> $GITHUB_ENV
+          test -s /tmp/mpfb_pkg/mpfb.zip
+          echo 'MPFB_ZIP=/tmp/mpfb_pkg/mpfb.zip' >> "$GITHUB_ENV"
 
       - name: Criar directorio de output
         run: mkdir -p "$MPFB_OUTPUT"
 
-      - name: Instalar MPFB no Blender
+      - name: Instalar MPFB e executar B5.2 na mesma sessao
+        shell: bash
         run: |
-          xvfb-run --auto-servernum --server-args="-screen 0 1280x960x24" \
-            blender_bin/blender --background \
-            --python-expr "
-          import bpy, os, sys
-          z = os.environ.get('MPFB_ZIP', '/tmp/mpfb_pkg/mpfb.zip')
-          print(f'[MPFB-INSTALL] ZIP: {z}')
-          try:
-              bpy.ops.extensions.package_install_files(
-                  filepath=z, repo='user_default', enable_on_install=True)
-              print('[MPFB-INSTALL] OK')
-          except Exception as e:
-              print(f'[MPFB-INSTALL] ERRO: {e}')
-              sys.exit(1)
-          "
-
-      - name: Executar script principal
-        run: |
-          xvfb-run --auto-servernum --server-args="-screen 0 1280x960x24" \
-            blender_bin/blender --background \
-            --python scripts/characters/create_female_b5_2.py \
-          2>&1 | tee "$MPFB_OUTPUT/blender_run.log"
-          EXIT=${PIPESTATUS[0]}
-          echo "Exit code: $EXIT"
-          exit $EXIT
+          set -o pipefail
+          xvfb-run --auto-servernum --server-args='-screen 0 1280x960x24' \
+            blender_bin/blender --background --python-exit-code 1 \
+            --python scripts/characters/run_female_b5_2.py \
+            2>&1 | tee "$MPFB_OUTPUT/blender_run.log"
 
       - name: Mostrar relatorio
         if: always()
         run: |
           R="$MPFB_OUTPUT/mpfb-b5-2-report.json"
-          [ -f "$R" ] && cat "$R" || echo "Relatorio nao encontrado"
+          if [ -f "$R" ]; then cat "$R"; else echo 'Relatorio nao encontrado'; fi
 
       - name: Listar output
         if: always()
-        run: ls -lh "$MPFB_OUTPUT/" 2>/dev/null || echo "(vazio)"
+        run: ls -lh "$MPFB_OUTPUT/" 2>/dev/null || true
 
       - name: Upload modelo (GLB + BLEND)
         uses: actions/upload-artifact@v4
