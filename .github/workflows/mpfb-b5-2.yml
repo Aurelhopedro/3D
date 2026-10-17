@@ -1,0 +1,169 @@
+name: MPFB Female B5.2 - Base Model (No Clothing)
+
+on:
+  workflow_dispatch:
+  push:
+    paths:
+      - 'scripts/characters/create_female_b5_2.py'
+      - '.github/workflows/mpfb-b5-2.yml'
+
+jobs:
+  build:
+    runs-on: ubuntu-latest
+    timeout-minutes: 45
+
+    env:
+      BLENDER_VERSION: "5.2.1"
+      BLENDER_ARCHIVE: "blender-5.2.1-linux-x64.tar.xz"
+      BLENDER_URL: "https://mirrors.dotsrc.org/blender/release/Blender5.2/blender-5.2.1-linux-x64.tar.xz"
+      MPFB_OUTPUT: "${{ github.workspace }}/output"
+
+    steps:
+      - name: Checkout repositorio
+        uses: actions/checkout@v4
+
+      - name: Cache Blender binario
+        id: cache-blender
+        uses: actions/cache@v4
+        with:
+          path: blender_bin
+          key: blender-5.2.1-linux-x64
+          fail-on-cache-miss: false
+
+      - name: Download e extrair Blender
+        if: steps.cache-blender.outputs.cache-hit != 'true'
+        run: |
+          echo "Descarregando Blender $BLENDER_VERSION..."
+          wget -q --show-progress "$BLENDER_URL" -O "$BLENDER_ARCHIVE"
+          echo "Extraindo..."
+          tar -xJf "$BLENDER_ARCHIVE"
+          mv "blender-$BLENDER_VERSION-linux-x64" blender_bin
+          rm -f "$BLENDER_ARCHIVE"
+          echo "Blender pronto: $(blender_bin/blender --version 2>/dev/null | head -1)"
+
+      - name: Verificar binario Blender
+        run: |
+          ls -la blender_bin/
+          blender_bin/blender --version 2>/dev/null | head -3 || echo "Aviso: --version falhou (normal sem display)"
+
+      - name: Instalar dependencias de sistema
+        run: |
+          sudo apt-get update -qq
+          sudo apt-get install -y --no-install-recommends \
+            libgl1 \
+            libglx-mesa0 \
+            libegl1 \
+            libegl-mesa0 \
+            libgles2 \
+            libx11-6 \
+            libxrender1 \
+            libxi6 \
+            libxkbcommon0 \
+            xvfb
+          echo "Dependencias instaladas."
+
+      - name: Download MPFB
+        env:
+          MPFB_ZIP_URL: ${{ secrets.MPFB_ZIP_URL }}
+        run: |
+          mkdir -p /tmp/mpfb_pkg
+          if [ -n "$MPFB_ZIP_URL" ]; then
+            echo "Descarregando MPFB de URL secreta..."
+            wget -q "$MPFB_ZIP_URL" -O /tmp/mpfb_pkg/mpfb.zip
+          else
+            echo "MPFB_ZIP_URL nao definida - tentando release publico..."
+            MPFB_TAG=$(curl -s https://api.github.com/repos/makehumancommunity/mpfb2/releases/latest | grep '"tag_name"' | cut -d'"' -f4)
+            echo "MPFB tag: $MPFB_TAG"
+            wget -q "https://github.com/makehumancommunity/mpfb2/releases/download/${MPFB_TAG}/mpfb2-${MPFB_TAG}.zip" \
+              -O /tmp/mpfb_pkg/mpfb.zip || \
+            wget -q "https://github.com/makehumancommunity/mpfb2/releases/latest/download/mpfb2.zip" \
+              -O /tmp/mpfb_pkg/mpfb.zip
+          fi
+          ls -lh /tmp/mpfb_pkg/mpfb.zip
+          echo "MPFB_ZIP=/tmp/mpfb_pkg/mpfb.zip" >> $GITHUB_ENV
+
+      - name: Criar directorio de output
+        run: mkdir -p "$MPFB_OUTPUT"
+
+      - name: Instalar MPFB no Blender
+        run: |
+          echo "Instalando MPFB como extensao Blender..."
+          xvfb-run --auto-servernum --server-args="-screen 0 1280x960x24" \
+            blender_bin/blender \
+              --background \
+              --python-expr "
+          import bpy, os
+          zip_path = os.environ.get('MPFB_ZIP', '/tmp/mpfb_pkg/mpfb.zip')
+          print(f'[MPFB-INSTALL] ZIP: {zip_path}')
+          try:
+              bpy.ops.extensions.package_install_files(
+                  filepath=zip_path,
+                  repo='user_default',
+                  enable_on_install=True
+              )
+              print('[MPFB-INSTALL] Instalacao OK')
+          except Exception as e:
+              print(f'[MPFB-INSTALL] ERRO: {e}')
+              import sys; sys.exit(1)
+          "
+          echo "MPFB instalado."
+
+      - name: Executar create_female_b5_2.py
+        run: |
+          echo "Iniciando Blender com xvfb..."
+          xvfb-run --auto-servernum --server-args="-screen 0 1280x960x24" \
+            blender_bin/blender \
+              --background \
+              --python scripts/characters/create_female_b5_2.py \
+            2>&1 | tee "$MPFB_OUTPUT/blender_run.log"
+          EXIT_CODE=${PIPESTATUS[0]}
+          echo "Blender exit code: $EXIT_CODE"
+          exit $EXIT_CODE
+
+      - name: Mostrar relatorio JSON
+        if: always()
+        run: |
+          REPORT="$MPFB_OUTPUT/mpfb-b5-2-report.json"
+          if [ -f "$REPORT" ]; then
+            echo "=== RELATORIO B5.2 ==="
+            cat "$REPORT"
+          else
+            echo "Relatorio nao encontrado."
+          fi
+
+      - name: Listar ficheiros de output
+        if: always()
+        run: |
+          echo "=== OUTPUT ==="
+          ls -lh "$MPFB_OUTPUT/" 2>/dev/null || echo "(vazio)"
+
+      - name: Upload GLB + BLEND
+        uses: actions/upload-artifact@v4
+        if: always()
+        with:
+          name: mpfb-female-b5-2-model
+          path: |
+            ${{ env.MPFB_OUTPUT }}/mpfb-female-b5-2.glb
+            ${{ env.MPFB_OUTPUT }}/mpfb-female-b5-2.blend
+          if-no-files-found: warn
+          retention-days: 14
+
+      - name: Upload renders
+        uses: actions/upload-artifact@v4
+        if: always()
+        with:
+          name: mpfb-female-b5-2-renders
+          path: ${{ env.MPFB_OUTPUT }}/render_*.png
+          if-no-files-found: warn
+          retention-days: 14
+
+      - name: Upload relatorio e log
+        uses: actions/upload-artifact@v4
+        if: always()
+        with:
+          name: mpfb-female-b5-2-report
+          path: |
+            ${{ env.MPFB_OUTPUT }}/mpfb-b5-2-report.json
+            ${{ env.MPFB_OUTPUT }}/blender_run.log
+          if-no-files-found: warn
+          retention-days: 14
