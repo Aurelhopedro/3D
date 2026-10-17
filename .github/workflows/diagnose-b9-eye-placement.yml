@@ -1,0 +1,105 @@
+name: Diagnóstico B9 — Posicionamento Ocular Geométrico
+
+on:
+  workflow_dispatch:
+
+permissions:
+  contents: read
+
+jobs:
+  diagnose:
+    runs-on: ubuntu-latest
+    timeout-minutes: 35
+
+    steps:
+      - uses: actions/checkout@v4
+
+      - name: Restaurar Blender 5.2.1
+        uses: actions/cache/restore@v4
+        with:
+          path: blender_bin
+          key: blender-5.2.1-linux-x64
+          fail-on-cache-miss: true
+
+      - name: Descarregar MPFB
+        run: curl -fL --retry 3 --retry-delay 5 -o mpfb2.zip https://files.makehumancommunity.org/plugins/mpfb2-latest.zip
+
+      - name: Verificar ZIP do MPFB
+        run: |
+          if [ ! -f mpfb2.zip ] || [ ! -s mpfb2.zip ]; then
+            echo "Erro: mpfb2.zip nao foi descarregado ou esta vazio." >&2
+            exit 1
+          fi
+          echo "MPFB ZIP: $(du -sh mpfb2.zip | cut -f1)"
+
+      - name: Executar diagnóstico ocular B9
+        env:
+          MPFB_ZIP: ${{ github.workspace }}/mpfb2.zip
+          MPFB_OUTPUT: ${{ github.workspace }}/output/diagnose-b9-eyes
+        run: >
+          ./blender_bin/blender
+          --background
+          --factory-startup
+          --python-exit-code 1
+          --python scripts/characters/diagnose_b9_eye_placement.py
+
+      - name: Resumo do diagnóstico
+        if: always()
+        run: |
+          echo "=== Ficheiros produzidos ==="
+          ls -lh output/diagnose-b9-eyes/ 2>/dev/null || echo "(vazio)"
+          echo ""
+          echo "=== Resumo do relatório ==="
+          python3 - << 'EOF'
+          import json, sys
+          try:
+              r = json.load(open("output/diagnose-b9-eyes/b9_eye_diag_report.json"))
+              print(f"Status: {r.get('status')}")
+              print()
+              print("=== GRUPOS HELPER-EYE ===")
+              for side in ("helper_l_eye", "helper_r_eye"):
+                  g = r.get("groups", {}).get(side, {})
+                  print(f"  {side}:")
+                  print(f"    centróide:      {g.get('centroid')}")
+                  print(f"    bbox Y:         {g.get('bbox', {}).get('y')}")
+                  print(f"    dims mm:        {g.get('dimensions_mm')}")
+                  print(f"    ponto frontal:  {g.get('point_most_front')}")
+                  print(f"    percentil Y 10: {g.get('y_percentiles', {}).get('p10')}")
+              print()
+              print("=== ANÁLISE ORBITAL ===")
+              for side in ("left", "right"):
+                  o = r.get("orbital_analysis", {}).get(side, {})
+                  print(f"  {side}:")
+                  print(f"    orbital_center_estimate: {o.get('orbital_center_estimate')}")
+                  print(f"    orbital_depth_min_y:     {o.get('orbital_depth_min_y')}")
+                  print(f"    inflection_point:        {o.get('inflection_point')}")
+              print()
+              print("=== POSIÇÕES DOS MARCADORES (L) ===")
+              mp = r.get("marker_positions", {})
+              for k, v in mp.items():
+                  print(f"  {k}: L={v.get('L')}")
+              print()
+              print("=== DISTÂNCIAS ===")
+              d = r.get("distances", {})
+              for k, v in d.items():
+                  print(f"  {k}: {v}")
+              print()
+              print("=== CONCLUSÕES ===")
+              for c in r.get("conclusions", []):
+                  print(f"  [{c['id']}] {c['finding']}")
+          except Exception as e:
+              print(f"Erro ao ler relatório: {e}")
+          EOF
+
+      - name: Publicar artefactos de diagnóstico
+        if: always()
+        uses: actions/upload-artifact@v4
+        with:
+          name: b9-eye-placement-diagnostic
+          path: |
+            output/diagnose-b9-eyes/b9_eye_diag_report.json
+            output/diagnose-b9-eyes/diag_b9_01_front.png
+            output/diagnose-b9-eyes/diag_b9_02_side.png
+            output/diagnose-b9-eyes/diag_b9_03_orbital_closeup.png
+            output/diagnose-b9-eyes/diag_b9_04_top_depth.png
+          if-no-files-found: warn
