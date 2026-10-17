@@ -1,0 +1,159 @@
+name: MPFB - Mesh Atlas - Inventario Completo
+
+on:
+  workflow_dispatch:
+
+permissions:
+  contents: read
+
+jobs:
+  inventory:
+    runs-on: ubuntu-latest
+    timeout-minutes: 60
+
+    steps:
+      - uses: actions/checkout@v4
+
+      - name: Restaurar Blender 5.2.1
+        uses: actions/cache/restore@v4
+        with:
+          path: blender_bin
+          key: blender-5.2.1-linux-x64
+          fail-on-cache-miss: true
+
+      - name: Descarregar MPFB
+        run: curl -fL --retry 3 --retry-delay 5 -o mpfb2.zip https://files.makehumancommunity.org/plugins/mpfb2-latest.zip
+
+      - name: Verificar ZIP do MPFB
+        run: |
+          if [ ! -f mpfb2.zip ] || [ ! -s mpfb2.zip ]; then
+            echo "Erro: mpfb2.zip nao foi descarregado ou esta vazio." >&2
+            exit 1
+          fi
+          echo "MPFB ZIP: $(du -sh mpfb2.zip | cut -f1)"
+
+      - name: Criar directorio de saida
+        run: mkdir -p output/mesh-atlas/base output/mesh-atlas/female_b9_rev2 output/mesh-atlas/comparison
+
+      - name: Executar extractor de inventario
+        env:
+          MPFB_ZIP: ${{ github.workspace }}/mpfb2.zip
+          MPFB_OUTPUT: ${{ github.workspace }}/output/mesh-atlas
+        run: >
+          ./blender_bin/blender
+          --background
+          --factory-startup
+          --python-exit-code 1
+          --python scripts/mesh_atlas/extract_mesh_inventory.py
+
+      - name: Verificar ficheiros produzidos
+        if: always()
+        run: |
+          echo "=== Estrutura output/mesh-atlas ==="
+          find output/mesh-atlas/ -type f | sort 2>/dev/null || echo "Directorio vazio ou inexistente"
+          echo ""
+          echo "=== Tamanhos ==="
+          du -sh output/mesh-atlas/*/ 2>/dev/null || true
+          echo ""
+          echo "=== Resumo do Inventario ==="
+          python3 - <<'PYEOF'
+          import json, sys, os
+          path = "output/mesh-atlas/inventory_summary.json"
+          if not os.path.exists(path):
+              print("ERRO: inventory_summary.json nao encontrado")
+              sys.exit(0)
+          with open(path) as f:
+              s = json.load(f)
+
+          print(f"Estado geral      : {s.get('overall_status','?')}")
+          print(f"Blender           : {s.get('blender_version','?')}")
+          print(f"MPFB              : {s.get('mpfb_version','?')}")
+          print(f"Total dados       : {s.get('total_data_mb','?')} MB")
+          print(f"Estado base       : {s.get('extraction_status',{}).get('base','?')}")
+          print(f"Estado female_b9  : {s.get('extraction_status',{}).get('female_b9','?')}")
+          print(f"Estado comparison : {s.get('extraction_status',{}).get('comparison','?')}")
+          print("")
+
+          for label, key in [("MALHA BASE", "base"), ("FEMALE B9 Rev2", "female_b9")]:
+              d = s.get(key, {})
+              print(f"--- {label} ---")
+              print(f"  Objectos       : {d.get('object','?')}")
+              print(f"  Vertices       : {d.get('vertices','?')}")
+              print(f"  Arestas        : {d.get('edges','?')}")
+              print(f"  Faces          : {d.get('faces','?')}")
+              print(f"  Grupos         : {d.get('vertex_groups','?')}")
+              print(f"  Shape keys     : {d.get('shape_keys','?')}")
+              print(f"  Status         : {d.get('status','?')}")
+              cats = d.get("categories", {})
+              for c, st in cats.items():
+                  mark = "OK" if st == "complete" else "!!" if st == "partial" else "XX"
+                  print(f"    [{mark}] {c}: {st}")
+              print("")
+
+          cmp = s.get("comparison", {})
+          if cmp:
+              print("--- COMPARACAO ---")
+              for k, v in cmp.items():
+                  print(f"  {k}: {v}")
+              print("")
+
+          errs = s.get("errors", [])
+          if errs:
+              print(f"ERROS ({len(errs)}):")
+              for e in errs:
+                  print(f"  [{e.get('category','?')}] {e.get('error','?')}")
+          else:
+              print("Sem erros registados.")
+          PYEOF
+
+      - name: Validar ficheiros obrigatorios
+        if: always()
+        run: |
+          echo "=== Validacao de ficheiros obrigatorios ==="
+          MISSING=0
+          for F in \
+            output/mesh-atlas/inventory_summary.json \
+            output/mesh-atlas/base/metadata.json \
+            output/mesh-atlas/base/vertices.jsonl \
+            output/mesh-atlas/base/edges.jsonl \
+            output/mesh-atlas/base/faces.jsonl \
+            output/mesh-atlas/base/vertex_groups.json \
+            output/mesh-atlas/base/shape_keys.json \
+            output/mesh-atlas/base/topology.json \
+            output/mesh-atlas/base/materials.json \
+            output/mesh-atlas/base/uv_layers.json \
+            output/mesh-atlas/base/objects.json \
+            output/mesh-atlas/female_b9_rev2/metadata.json \
+            output/mesh-atlas/female_b9_rev2/vertices.jsonl \
+            output/mesh-atlas/female_b9_rev2/edges.jsonl \
+            output/mesh-atlas/female_b9_rev2/faces.jsonl \
+            output/mesh-atlas/female_b9_rev2/vertex_groups.json \
+            output/mesh-atlas/female_b9_rev2/shape_keys.json \
+            output/mesh-atlas/female_b9_rev2/topology.json \
+            output/mesh-atlas/female_b9_rev2/materials.json \
+            output/mesh-atlas/female_b9_rev2/uv_layers.json \
+            output/mesh-atlas/female_b9_rev2/objects.json \
+            output/mesh-atlas/comparison/inventory_comparison.json
+          do
+            if [ -f "$F" ]; then
+              SIZE=$(du -sh "$F" | cut -f1)
+              echo "  OK  $F ($SIZE)"
+            else
+              echo "  FALTA $F"
+              MISSING=$((MISSING+1))
+            fi
+          done
+          echo ""
+          if [ $MISSING -eq 0 ]; then
+            echo "Todos os ficheiros obrigatorios presentes."
+          else
+            echo "AVISO: $MISSING ficheiro(s) em falta."
+          fi
+
+      - name: Publicar artefacto — Mesh Atlas Inventario
+        if: always()
+        uses: actions/upload-artifact@v4
+        with:
+          name: mpfb-mesh-atlas-inventory
+          path: output/mesh-atlas/
+          if-no-files-found: warn
