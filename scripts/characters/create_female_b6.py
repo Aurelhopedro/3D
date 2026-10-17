@@ -21,7 +21,6 @@ def rgba(h):
 
 def material(name, h, rough=.65):
     m = bpy.data.materials.new(name)
-    m.use_nodes = True
     nd = m.node_tree.nodes
     nd.clear()
     p = nd.new('ShaderNodeBsdfPrincipled')
@@ -81,7 +80,7 @@ def build_garment(h, skin, dress_mat):
             continue
         chosen.append(f)
     if len(chosen) < 80:
-        raise RuntimeError('Torso patch insufficient; inspect MPFB topology before proceeding')
+        raise RuntimeError('Torso patch insufficient')
     indices = sorted({i for f in chosen for i in f})
     imap = {idx: k for k, idx in enumerate(indices)}
     newverts = []
@@ -140,46 +139,52 @@ def build_hair(bodyverts, lo, hi, hair_mat):
     }
 
 
-def camera(name, location, target):
-    ca = bpy.data.cameras.new(name)
-    ob = bpy.data.objects.new(name, ca)
-    bpy.context.collection.objects.link(ob)
-    ob.location = location
-    direction = Vector(target) - ob.location
-    ob.rotation_euler = direction.to_track_quat('-Z', 'Y').to_euler()
-    ca.type = 'ORTHO'
-    ca.ortho_scale = 2.2
-    return ob
-
-
 def render_views(lo, hi):
+    """Render previews — non-fatal if it fails."""
     scene = bpy.context.scene
-    scene.render.engine = 'BLENDER_EEVEE_NEXT'
+
+    # Detectar o nome correcto do motor de render disponível
+    render_engine = None
+    for candidate in ('BLENDER_EEVEE', 'BLENDER_EEVEE_NEXT', 'CYCLES'):
+        try:
+            scene.render.engine = candidate
+            render_engine = candidate
+            break
+        except TypeError:
+            continue
+    if render_engine is None:
+        R['limitations'].append('No suitable render engine found; previews skipped.')
+        return
+
     scene.render.resolution_x = 640
     scene.render.resolution_y = 900
     scene.render.resolution_percentage = 100
+    if scene.world is None:
+        scene.world = bpy.data.worlds.new('World')
     scene.world.color = (.35, .35, .35)
     center = (0, 0, (lo + hi) / 2)
+
     for label, loc in [('front', (0, -3.5, center[2])),
                        ('back', (0, 3.5, center[2])),
                        ('side', (3.5, 0, center[2]))]:
-        cam = camera('B6_Camera_' + label, loc, center)
-        scene.camera = cam
+        ca = bpy.data.cameras.new('B6_Camera_' + label)
+        ob = bpy.data.objects.new('B6_Camera_' + label, ca)
+        bpy.context.collection.objects.link(ob)
+        ob.location = loc
+        direction = Vector(center) - ob.location
+        ob.rotation_euler = direction.to_track_quat('-Z', 'Y').to_euler()
+        ca.type = 'ORTHO'
+        ca.ortho_scale = 2.2
+        scene.camera = ob
         scene.render.filepath = str(OUT / ('b6-' + label + '.png'))
         try:
             bpy.ops.render.render(write_still=True)
         except Exception as e:
-            R['limitations'].append('Preview ' + label + ' failed: ' + str(e))
-        bpy.data.objects.remove(cam, do_unlink=True)
+            R['limitations'].append(f'Preview {label} failed: {e}')
+        bpy.data.objects.remove(ob, do_unlink=True)
 
 
 def install_mpfb_as_extension(zip_path: Path) -> str:
-    """
-    Instala o MPFB como extensão do Blender 5.x via bpy.ops.extensions.
-    Reempacota o ZIP para remover o prefixo de pasta e aponta para um
-    repositório local. Funciona sem --factory-startup.
-    """
-    # Reempacotar: remover prefixo de pasta do ZIP original
     repacked = OUT / 'mpfb-extension.zip'
     with zipfile.ZipFile(zip_path) as z:
         manifest = next(n for n in z.namelist() if n.endswith('blender_manifest.toml'))
@@ -189,7 +194,6 @@ def install_mpfb_as_extension(zip_path: Path) -> str:
                 if n.startswith(prefix) and not n.endswith('/') and '..' not in Path(n).parts:
                     dest.writestr(n[len(prefix):], z.read(n))
 
-    # Garantir que existe um repositório de extensões do utilizador
     repos = bpy.context.preferences.extensions.repos
     repo = next((r for r in repos if r.module == 'user_default'), None)
     if repo is None:
@@ -200,7 +204,6 @@ def install_mpfb_as_extension(zip_path: Path) -> str:
         )
     repo.enabled = True
 
-    # Instalar o pacote no repositório
     result = bpy.ops.extensions.package_install_files(
         filepath=str(repacked),
         repo=repo.module,
@@ -209,7 +212,6 @@ def install_mpfb_as_extension(zip_path: Path) -> str:
     if 'FINISHED' not in result and 'RUNNING_MODAL' not in result:
         raise RuntimeError(f'package_install_files devolveu: {result}')
 
-    # Activar o módulo
     import addon_utils
     module_id = f'bl_ext.{repo.module}.mpfb'
     if module_id not in bpy.context.preferences.addons:
@@ -222,7 +224,7 @@ def install_mpfb_as_extension(zip_path: Path) -> str:
 
 
 try:
-    # ── LIMPAR CENA (sem --factory-startup o Blender arranca com cubo+luz) ──
+    # ── LIMPAR CENA ──────────────────────────────────────────────────────────
     bpy.ops.object.select_all(action='SELECT')
     bpy.ops.object.delete(use_global=False)
     for col in [bpy.data.meshes, bpy.data.cameras, bpy.data.lights,
@@ -241,7 +243,7 @@ try:
     h = bpy.data.objects.get('Human')
     assert h and h.type == 'MESH', 'Human mesh not found after create_human'
 
-    # ── MORPH FEMININO (B5 confirmado) ───────────────────────────────────────
+    # ── MORPH FEMININO ───────────────────────────────────────────────────────
     keys = h.data.shape_keys.key_blocks
     for k in keys:
         n = k.name
@@ -294,9 +296,15 @@ try:
         export_cameras=False,
         export_lights=False,
     )
-    render_views(lo, hi_z)
-    R['status'] = 'success_b6_geometry_experimental'
     R['glb_bytes'] = (OUT / 'mpfb-female-b6.glb').stat().st_size
+
+    # ── RENDER DE PREVIEWS (não-fatal) ───────────────────────────────────────
+    try:
+        render_views(lo, hi_z)
+    except Exception as e:
+        R['limitations'].append(f'render_views failed (non-fatal): {e}')
+
+    R['status'] = 'success_b6_geometry_experimental'
 
 except Exception as e:
     R.update(status='failed', error=str(e), traceback=traceback.format_exc())
