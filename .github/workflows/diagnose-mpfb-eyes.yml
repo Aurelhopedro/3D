@@ -1,0 +1,129 @@
+name: Diagnose MPFB Eyes
+
+on:
+  push:
+    paths:
+      - ".github/workflows/diagnose-mpfb-eyes.yml"
+      - "scripts/characters/diagnose_mpfb_eyes.py"
+  workflow_dispatch:
+
+permissions:
+  contents: write
+
+jobs:
+  diagnose:
+    runs-on: ubuntu-latest
+    timeout-minutes: 40
+
+    steps:
+      - name: Checkout
+        uses: actions/checkout@v4
+
+      # ── Blender 5.2.1 (reutiliza cache do pipeline existente) ────────────
+      - name: Restaurar Blender 5.2.1
+        id: blender-cache
+        uses: actions/cache/restore@v4
+        with:
+          path: blender_bin
+          key: blender-5.2.1-linux-x64
+
+      - name: Descarregar Blender 5.2.1 (se não estiver em cache)
+        if: steps.blender-cache.outputs.cache-hit != 'true'
+        run: |
+          set -euo pipefail
+          BASE="https://download.blender.org/release/Blender5.2"
+          FILE="blender-5.2.1-linux-x64.tar.xz"
+          SHA="blender-5.2.1.sha256"
+          curl -fL --retry 3 -o "$FILE" "$BASE/$FILE"
+          curl -fL --retry 3 -o "$SHA"  "$BASE/$SHA"
+          EXPECTED=$(grep -F "$FILE" "$SHA" | awk '{print $1}')
+          test -n "$EXPECTED"
+          echo "$EXPECTED  $FILE" | sha256sum -c -
+          mkdir -p blender_bin
+          tar -xJf "$FILE" -C blender_bin --strip-components=1
+
+      # ── MPFB ─────────────────────────────────────────────────────────────
+      - name: Descarregar MPFB
+        run: curl -fL --retry 3 --retry-delay 5 -o mpfb2.zip https://files.makehumancommunity.org/plugins/mpfb2-latest.zip
+
+      - name: Verificar ZIP do MPFB
+        run: |
+          if [ ! -f mpfb2.zip ] || [ ! -s mpfb2.zip ]; then
+            echo "Erro: mpfb2.zip nao foi descarregado ou esta vazio." >&2
+            exit 1
+          fi
+          echo "MPFB ZIP: $(du -sh mpfb2.zip | cut -f1)"
+
+      # ── Dependências Python (Pillow para imagens, se necessário) ─────────
+      - name: Preparar ambiente Python do Blender
+        run: |
+          PYTHON_BIN=$(find blender_bin -name "python3*" -type f | head -1)
+          echo "Python Blender: $PYTHON_BIN"
+          # instalar pillow no python do blender (opcional — só se o script usar PIL)
+          "$PYTHON_BIN" -m pip install --quiet Pillow 2>/dev/null || true
+
+      # ── Executar diagnóstico ─────────────────────────────────────────────
+      - name: Executar diagnóstico dos olhos do MPFB
+        env:
+          MPFB_ZIP:    ${{ github.workspace }}/mpfb2.zip
+          MPFB_OUTPUT: ${{ github.workspace }}/output/diagnose-eyes
+        run: |
+          mkdir -p output/diagnose-eyes
+          ./blender_bin/blender \
+            --background \
+            --factory-startup \
+            --python-exit-code 1 \
+            --python scripts/characters/diagnose_mpfb_eyes.py
+
+      # ── Mostrar relatório nos logs ───────────────────────────────────────
+      - name: Mostrar relatório JSON
+        if: always()
+        run: |
+          echo "=== Ficheiros produzidos ==="
+          ls -lh output/diagnose-eyes/ 2>/dev/null || echo "Diretório vazio"
+          echo ""
+          echo "=== Relatório de diagnóstico ==="
+          cat output/diagnose-eyes/diagnose-eyes-report.json 2>/dev/null \
+            | python3 -c "
+          import sys, json
+          data = json.load(sys.stdin)
+          print('Status:', data.get('status'))
+          print('Blender:', data.get('blender'))
+          print()
+          print('=== Eye Detection ===')
+          ed = data.get('eye_detection', {})
+          print('Method:', ed.get('method'))
+          print('Source:', ed.get('source'))
+          print('Confidence:', ed.get('confidence'))
+          print('Left eye:', ed.get('left_eye'))
+          print('Right eye:', ed.get('right_eye'))
+          print()
+          print('=== Vertex Groups (eye-related) ===')
+          vg = data.get('vertex_groups', {})
+          print('Eye groups found:', vg.get('eye_related', []))
+          print()
+          print('=== B9 Recommendation ===')
+          b9 = data.get('b9_recommendation', {})
+          for k, v in b9.items():
+              print(f'  {k}: {v}')
+          print()
+          if data.get('errors'):
+              print('=== ERRORS ===')
+              for e in data['errors']:
+                  print(e)
+          " || cat output/diagnose-eyes/diagnose-eyes-report.json 2>/dev/null || echo "Relatorio nao gerado"
+
+      # ── Publicar todos os artefactos ─────────────────────────────────────
+      - name: Publicar artefactos de diagnóstico
+        if: always()
+        uses: actions/upload-artifact@v4
+        with:
+          name: diagnose-mpfb-eyes
+          path: |
+            output/diagnose-eyes/diagnose-eyes-report.json
+            output/diagnose-eyes/diag_01_front_body.png
+            output/diagnose-eyes/diag_02_head_front.png
+            output/diagnose-eyes/diag_03_side_right.png
+            output/diagnose-eyes/diag_04_quarter_markers.png
+          if-no-files-found: warn
+          retention-days: 30
