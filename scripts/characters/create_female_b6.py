@@ -1,6 +1,5 @@
 """B6: clothing derived from evaluated body surface; safe eye handling.
-Blender 5.2.1 / MPFB. Fixes vs B5: no --factory-startup, scene cleared
-via Python, MPFB installed via filesystem extraction (addon_utils).
+Blender 5.2.1 / MPFB. Usa bpy.ops.extensions (sem --factory-startup).
 """
 import bpy, bmesh, json, math, os, sys, traceback, zipfile
 from pathlib import Path
@@ -174,90 +173,66 @@ def render_views(lo, hi):
         bpy.data.objects.remove(cam, do_unlink=True)
 
 
-def install_mpfb_headless(zip_path: Path) -> str:
+def install_mpfb_as_extension(zip_path: Path) -> str:
     """
-    Instala o MPFB sem depender de bpy.ops.extensions (que falha headless).
-    Extrai os ficheiros do addon directamente para a pasta de scripts do
-    utilizador do Blender e carrega com addon_utils.enable().
-    Devolve o module_id activo.
+    Instala o MPFB como extensão do Blender 5.x via bpy.ops.extensions.
+    Reempacota o ZIP para remover o prefixo de pasta e aponta para um
+    repositório local. Funciona sem --factory-startup.
     """
-    import addon_utils
-
-    # Pasta de addons do utilizador (Blender 4.x / 5.x)
-    user_addon_dir = Path(bpy.utils.user_resource('SCRIPTS')) / 'addons'
-    user_addon_dir.mkdir(parents=True, exist_ok=True)
-
-    mpfb_dir = user_addon_dir / 'mpfb'
-    if mpfb_dir.exists():
-        import shutil
-        shutil.rmtree(mpfb_dir)
-
+    # Reempacotar: remover prefixo de pasta do ZIP original
+    repacked = OUT / 'mpfb-extension.zip'
     with zipfile.ZipFile(zip_path) as z:
-        # Descobrir o prefixo dentro do ZIP (ex: "mpfb2-latest/src/mpfb/")
-        # O __init__.py do addon está em <prefix>/__init__.py
-        init_entries = [n for n in z.namelist() if n.endswith('/__init__.py')]
-        # Escolher o __init__.py mais curto (o do root do addon, não sub-módulos)
-        init_entries.sort(key=lambda x: x.count('/'))
-        if not init_entries:
-            raise RuntimeError('Não encontrei __init__.py no ZIP do MPFB')
-        prefix = init_entries[0][:-len('__init__.py')]  # ex: "mpfb2-latest/src/mpfb/"
+        manifest = next(n for n in z.namelist() if n.endswith('blender_manifest.toml'))
+        prefix = manifest[:-len('blender_manifest.toml')]
+        with zipfile.ZipFile(repacked, 'w', zipfile.ZIP_DEFLATED) as dest:
+            for n in z.namelist():
+                if n.startswith(prefix) and not n.endswith('/') and '..' not in Path(n).parts:
+                    dest.writestr(n[len(prefix):], z.read(n))
 
-        for member in z.namelist():
-            if not member.startswith(prefix):
-                continue
-            if member.endswith('/'):
-                continue
-            rel = member[len(prefix):]  # caminho relativo dentro do addon
-            if '..' in Path(rel).parts:
-                continue
-            dest = mpfb_dir / rel
-            dest.parent.mkdir(parents=True, exist_ok=True)
-            dest.write_bytes(z.read(member))
+    # Garantir que existe um repositório de extensões do utilizador
+    repos = bpy.context.preferences.extensions.repos
+    repo = next((r for r in repos if r.module == 'user_default'), None)
+    if repo is None:
+        repo = repos.new(
+            name='User Default',
+            module='user_default',
+            custom_directory=str(OUT / 'extensions'),
+        )
+    repo.enabled = True
 
-    if not (mpfb_dir / '__init__.py').exists():
-        raise RuntimeError(f'__init__.py não encontrado em {mpfb_dir}')
+    # Instalar o pacote no repositório
+    result = bpy.ops.extensions.package_install_files(
+        filepath=str(repacked),
+        repo=repo.module,
+        enable_on_install=True,
+    )
+    if 'FINISHED' not in result and 'RUNNING_MODAL' not in result:
+        raise RuntimeError(f'package_install_files devolveu: {result}')
 
-    # Adicionar a pasta de addons ao sys.path para que o Blender encontre o módulo
-    scripts_dir = str(user_addon_dir.parent)
-    if scripts_dir not in sys.path:
-        sys.path.insert(0, scripts_dir)
-    addons_dir = str(user_addon_dir)
-    if addons_dir not in sys.path:
-        sys.path.insert(0, addons_dir)
-
-    # Recarregar a lista de addons disponíveis
-    bpy.ops.preferences.addon_refresh()
-
-    # Tentar activar com o nome do módulo directamente
-    addon_utils.enable('mpfb', default_set=True)
-
-    # Verificar se ficou activo
-    if 'mpfb' in bpy.context.preferences.addons:
-        return 'mpfb'
-
-    # Fallback: tentar como extensão bl_ext.user_default.mpfb
-    try:
-        addon_utils.enable('bl_ext.user_default.mpfb', default_set=True)
-        if 'bl_ext.user_default.mpfb' in bpy.context.preferences.addons:
-            return 'bl_ext.user_default.mpfb'
-    except Exception:
-        pass
-
-    raise RuntimeError(f'MPFB não ficou activo. Addons: {list(bpy.context.preferences.addons.keys())}')
+    # Activar o módulo
+    import addon_utils
+    module_id = f'bl_ext.{repo.module}.mpfb'
+    if module_id not in bpy.context.preferences.addons:
+        addon_utils.enable(module_id, default_set=True)
+    if module_id not in bpy.context.preferences.addons:
+        raise RuntimeError(
+            f'MPFB não ficou activo. Addons: {list(bpy.context.preferences.addons.keys())}'
+        )
+    return module_id
 
 
 try:
-    # ── LIMPAR CENA (necessário sem --factory-startup) ────────────────────
+    # ── LIMPAR CENA (sem --factory-startup o Blender arranca com cubo+luz) ──
     bpy.ops.object.select_all(action='SELECT')
     bpy.ops.object.delete(use_global=False)
-    for block_col in [bpy.data.meshes, bpy.data.cameras, bpy.data.lights,
-                      bpy.data.materials, bpy.data.curves]:
-        for block in list(block_col):
-            block_col.remove(block)
+    for col in [bpy.data.meshes, bpy.data.cameras, bpy.data.lights,
+                bpy.data.materials, bpy.data.curves]:
+        for block in list(col):
+            col.remove(block)
 
     # ── INSTALAR MPFB ────────────────────────────────────────────────────────
     src = Path(os.environ['MPFB_ZIP'])
-    module_id = install_mpfb_headless(src)
+    module_id = install_mpfb_as_extension(src)
     R['components']['mpfb'] = {'status': 'active', 'module': module_id}
 
     # ── CRIAR HUMANO ─────────────────────────────────────────────────────────
@@ -271,10 +246,7 @@ try:
     for k in keys:
         n = k.name
         if n.startswith(('$md-$as-', '$md-$ca-', '$md-$af-')) and '-$yn' in n:
-            if '-$fe-' in n:
-                k.value = 1 / 3
-            elif '-$ma-' in n:
-                k.value = 0
+            k.value = 1 / 3 if '-$fe-' in n else 0
     bpy.context.view_layer.update()
 
     # ── ESCALA PARA 1,70 m ───────────────────────────────────────────────────
@@ -297,24 +269,22 @@ try:
     mat_on(h, material('B6_Skin', '#A66A48', .55))
     dressmat = material('B6_RedFabric', '#C62828', .76)
 
-    # ── VESTUÁRIO ────────────────────────────────────────────────────────────
+    # ── VESTUÁRIO + CABELO ───────────────────────────────────────────────────
     lo, hi_z, bodyverts = build_garment(h, None, dressmat)
-
-    # ── CABELO ───────────────────────────────────────────────────────────────
     R['components']['eyes'] = {
         'method': 'no_additional_eyes',
-        'reason': 'B5 added eyes behind head; anatomical landmarks unverified'
+        'reason': 'Anatomical landmarks unverified'
     }
     build_hair(bodyverts, lo, hi_z, material('B6_Hair', '#1A0D08'))
 
     R['limitations'] += [
-        'Hair not generated until face orientation is established.',
-        'Dress torso patch may include holes or arm seams.',
-        'No rigging, garment physics or anatomical landmark detection.',
+        'Hair deferred until face orientation established.',
+        'Dress torso patch may include arm seams.',
+        'No rigging or garment physics.',
     ]
     R['checks']['body_height'] = abs(final - 1.7) <= .01
 
-    # ── GRAVAR ───────────────────────────────────────────────────────────────
+    # ── GRAVAR .BLEND E EXPORTAR GLB ─────────────────────────────────────────
     bpy.ops.wm.save_as_mainfile(filepath=str(OUT / 'mpfb-female-b6.blend'))
     bpy.ops.object.select_all(action='SELECT')
     bpy.ops.export_scene.gltf(
