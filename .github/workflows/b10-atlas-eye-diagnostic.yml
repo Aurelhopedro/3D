@@ -1,0 +1,166 @@
+name: MPFB - B10 - Atlas Eye Diagnostic
+
+on:
+  workflow_dispatch:
+
+permissions:
+  contents: read
+
+jobs:
+  b10_diagnostic:
+    runs-on: ubuntu-latest
+    timeout-minutes: 60
+
+    steps:
+      - uses: actions/checkout@v4
+
+      - name: Restaurar Blender 5.2.1
+        uses: actions/cache/restore@v4
+        with:
+          path: blender_bin
+          key: blender-5.2.1-linux-x64
+          fail-on-cache-miss: true
+
+      - name: Descarregar MPFB
+        run: curl -fL --retry 3 --retry-delay 5 -o mpfb2.zip https://files.makehumancommunity.org/plugins/mpfb2-latest.zip
+
+      - name: Verificar ZIP do MPFB
+        run: |
+          if [ ! -f mpfb2.zip ] || [ ! -s mpfb2.zip ]; then
+            echo "Erro: mpfb2.zip nao foi descarregado ou esta vazio." >&2
+            exit 1
+          fi
+          echo "MPFB ZIP: $(du -sh mpfb2.zip | cut -f1)"
+
+      - name: Criar diretorios de saida
+        run: |
+          mkdir -p output/b10-atlas-eye-diagnostic/renders
+
+      - name: Executar B10 — Atlas Eye Diagnostic
+        env:
+          MPFB_ZIP: ${{ github.workspace }}/mpfb2.zip
+          MPFB_OUTPUT: ${{ github.workspace }}/output/b10-atlas-eye-diagnostic
+        run: >
+          ./blender_bin/blender
+          --background
+          --factory-startup
+          --python-exit-code 1
+          --python scripts/b10_atlas_eye_diagnostic.py
+
+      - name: Verificar ficheiros produzidos
+        if: always()
+        run: |
+          echo "=== Estrutura output/b10-atlas-eye-diagnostic ==="
+          find output/b10-atlas-eye-diagnostic/ -type f | sort 2>/dev/null \
+            || echo "Directorio vazio ou inexistente"
+          echo ""
+          echo "=== Tamanhos ==="
+          du -sh output/b10-atlas-eye-diagnostic/*/ 2>/dev/null || true
+          echo ""
+          echo "=== Resumo do Diagnóstico ==="
+          python3 - <<'PYEOF'
+          import json, os, sys
+
+          path = "output/b10-atlas-eye-diagnostic/diagnostic_report.json"
+          if not os.path.exists(path):
+              print("ERRO: diagnostic_report.json nao encontrado")
+              sys.exit(0)
+
+          with open(path) as f:
+              r = json.load(f)
+
+          print(f"Status            : {r.get('status','?')}")
+          print(f"Blender           : {r.get('blender_version','?')}")
+          print(f"Vertices (human)  : {r.get('human',{}).get('vertices','?')}")
+          print(f"Morph feminino    : {r.get('female_morph',{}).get('changed_vertices','?')} vertices alterados")
+          print("")
+          print("--- Grupos oculares ---")
+          for gname, gd in r.get("eye_groups", {}).items():
+              st  = gd.get("status","?")
+              cen = gd.get("centroid","N/A")
+              vc  = gd.get("vertex_count","?")
+              ok  = "OK" if st == "complete" else "FALTA" if st == "unavailable" else "ERRO"
+              print(f"  [{ok}] {gname}: {cen} ({vc} verts)")
+          print("")
+          print("--- Medições ---")
+          meas = r.get("measurements", {})
+          for k in ["interocular_distance_joint", "joint_to_target_L", "joint_to_target_R",
+                    "lid_span_L", "lid_span_R", "joint_target_symmetry_delta",
+                    "joint_L_depth_behind_face", "face_y_most_front"]:
+              v = meas.get(k, "N/A")
+              print(f"  {k}: {v}")
+          print("")
+          print("--- Variantes calculadas ---")
+          variants = r.get("diagnostic_variants", [])
+          print(f"  Total: {len(variants)}")
+          for v in variants:
+              inter = "⚠ INTERSECTA" if v.get("intersects_face_L") else "OK"
+              ref   = " ← REFERÊNCIA" if v.get("is_reference_variant") else ""
+              print(f"  r={v['radius_m']}m off={v['offset_m']}m: {inter}{ref}")
+          print("")
+          print("--- Renders ---")
+          for tag, rd in r.get("renders", {}).items():
+              ok = "OK" if rd.get("rendered") else "FALHOU"
+              print(f"  [{ok}] {rd.get('file','?')}")
+          print("")
+          print("--- MPFB Eye Assets ---")
+          ar = r.get("mpfb_asset_research", {})
+          print(f"  {ar.get('conclusion','N/A')[:120]}")
+          print("")
+          print("--- Posição dos olhos ---")
+          eps = r.get("eye_position_sources", {})
+          for side in ["L", "R"]:
+              ep = eps.get(side, {})
+              print(f"  Olho {side}: {ep.get('center','?')} (fonte: {ep.get('source','?')})")
+          print("")
+          print("--- Limitações ---")
+          for lim in r.get("limitations", []):
+              print(f"  ⚠ {lim[:100]}")
+          errs = r.get("errors", [])
+          if errs:
+              print(f"\nERROS ({len(errs)}):")
+              for e in errs:
+                  print(f"  {str(e)[:120]}")
+          PYEOF
+
+      - name: Verificar ficheiros obrigatorios
+        if: always()
+        run: |
+          echo "=== Ficheiros obrigatorios ==="
+          MISSING=0
+          for F in \
+            output/b10-atlas-eye-diagnostic/diagnostic_report.json \
+            output/b10-atlas-eye-diagnostic/measurements.json \
+            output/b10-atlas-eye-diagnostic/mpfb_eye_asset_research.md \
+            output/b10-atlas-eye-diagnostic/validation_report.md \
+            output/b10-atlas-eye-diagnostic/renders/front_diagnostic.png \
+            output/b10-atlas-eye-diagnostic/renders/front_clean.png \
+            output/b10-atlas-eye-diagnostic/renders/left_side.png \
+            output/b10-atlas-eye-diagnostic/renders/right_side.png \
+            output/b10-atlas-eye-diagnostic/renders/top.png \
+            output/b10-atlas-eye-diagnostic/renders/eye_closeup_front.png \
+            output/b10-atlas-eye-diagnostic/renders/eye_closeup_side.png \
+            output/b10-atlas-eye-diagnostic/b10_diagnostic.blend
+          do
+            if [ -f "$F" ]; then
+              SIZE=$(du -sh "$F" | cut -f1)
+              echo "  OK    $F ($SIZE)"
+            else
+              echo "  FALTA $F"
+              MISSING=$((MISSING+1))
+            fi
+          done
+          echo ""
+          if [ "$MISSING" -eq 0 ]; then
+            echo "Todos os ficheiros obrigatorios presentes."
+          else
+            echo "AVISO: $MISSING ficheiro(s) em falta."
+          fi
+
+      - name: Publicar artefacto — B10 Atlas Eye Diagnostic
+        if: always()
+        uses: actions/upload-artifact@v4
+        with:
+          name: mpfb-b10-atlas-eye-diagnostic
+          path: output/b10-atlas-eye-diagnostic/
+          if-no-files-found: warn
