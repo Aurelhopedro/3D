@@ -20,7 +20,11 @@ jobs:
         env:
           MPFB_ZIP: ${{ github.workspace }}/mpfb2.zip
           MPFB_OUTPUT: ${{ github.workspace }}/output/mpfb-b6
-        run: ./blender_bin/blender --background --factory-startup --python-exit-code 1 --python scripts/characters/create_female_b6.py
+        run: |
+          ./blender_bin/blender \
+            --background \
+            --python-exit-code 1 \
+            --python scripts/characters/create_female_b6.py
       - name: Upload B6 outputs
         if: always()
         uses: actions/upload-artifact@v4
