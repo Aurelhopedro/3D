@@ -1,0 +1,157 @@
+name: MPFB B9 - Diagnostico Profundo e Correcao dos Olhos
+
+on:
+  workflow_dispatch:
+  push:
+    paths:
+      - scripts/characters/diagnose_and_fix_b9_eyes.py
+      - .github/workflows/diagnose-and-fix-b9-eyes.yml
+
+permissions:
+  contents: read
+
+jobs:
+  diagnose-and-fix:
+    runs-on: ubuntu-latest
+    timeout-minutes: 60
+
+    steps:
+      - uses: actions/checkout@v4
+
+      - name: Restaurar Blender 5.2.1
+        uses: actions/cache/restore@v4
+        with:
+          path: blender_bin
+          key: blender-5.2.1-linux-x64
+          fail-on-cache-miss: true
+
+      - name: Descarregar MPFB
+        run: curl -fL --retry 3 --retry-delay 5 -o mpfb2.zip https://files.makehumancommunity.org/plugins/mpfb2-latest.zip
+
+      - name: Verificar ZIP do MPFB
+        run: |
+          if [ ! -f mpfb2.zip ] || [ ! -s mpfb2.zip ]; then
+            echo "Erro: mpfb2.zip nao foi descarregado ou esta vazio." >&2
+            exit 1
+          fi
+          echo "MPFB ZIP: $(du -sh mpfb2.zip | cut -f1)"
+
+      - name: Diagnosticar e corrigir olhos B9
+        env:
+          MPFB_ZIP: ${{ github.workspace }}/mpfb2.zip
+          MPFB_OUTPUT: ${{ github.workspace }}/output/diagnose-b9-eyes
+        run: >
+          ./blender_bin/blender
+          --background
+          --factory-startup
+          --python-exit-code 1
+          --python scripts/characters/diagnose_and_fix_b9_eyes.py
+
+      - name: Verificar resultados do diagnostico
+        if: always()
+        run: |
+          echo "=== Ficheiros produzidos ==="
+          ls -lh output/diagnose-b9-eyes/ 2>/dev/null || echo "Directorio vazio ou inexistente"
+          echo ""
+          echo "=== Relatorio de diagnostico ==="
+          cat output/diagnose-b9-eyes/diag_report.json 2>/dev/null \
+            | python3 -c "
+          import sys, json
+          r = json.load(sys.stdin)
+          print('Status:          ', r.get('status','?'))
+          print()
+
+          d = r.get('diagnosis', {})
+          print('--- DIAGNOSTICO ---')
+          print('Grupos presentes:', d.get('groups_present', []))
+          print('Grupos ausentes: ', d.get('groups_absent', []))
+
+          for side in ['L', 'R']:
+              eye = d.get(f'eye_{side}', {})
+              print(f'  Olho {side}:')
+              print(f'    Vertices no grupo:  {eye.get(\"vertex_count\",\"?\")}')
+              print(f'    Centroide (world):  {eye.get(\"centroid_world\",\"?\")}')
+              print(f'    Dimensoes (m):      {eye.get(\"dimensions\",\"?\")}')
+              print(f'    Normal media Y:     {eye.get(\"avg_normal_y\",\"?\")} ({eye.get(\"topology_note\",\"\")})')
+              rc = d.get('bvh_raycast', {}).get(side, {})
+              print(f'    BVH hit:            {rc.get(\"hit\",\"?\")}')
+              if rc.get('hit'):
+                  print(f'    Superficie face Y:  {rc.get(\"face_surface_y\",\"?\")}')
+                  print(f'    Centroide atras?:   {rc.get(\"centroid_behind_surface\",\"?\")}')
+                  print(f'    Erro Y (mm):        {round(rc.get(\"y_error_in_b9rev2\",0)*1000,2)}mm')
+
+          print()
+          print('--- B9 Rev2 ANALISE DE ERRO ---')
+          ea = d.get('b9rev2_error_analysis', {})
+          print('  Esclera B9Rev2 atras da face?:', ea.get('sclera_behind_face','?'))
+          for side in ['L', 'R']:
+              k = f'b9rev2_sclera_y_vs_surface_{side}'
+              if k in ea:
+                  print(f'  Olho {side}: {ea[k]}')
+
+          print()
+          print('--- CORRECAO ---')
+          for side in ['L', 'R']:
+              cp = r.get('corrected_positions', {}).get(side, {})
+              print(f'  Olho {side}:')
+              print(f'    Metodo:        {cp.get(\"method\",\"?\")}')
+              print(f'    X:             {cp.get(\"cx\",\"?\")}')
+              print(f'    Y sclera:      {cp.get(\"cy_sclera\",\"?\")}')
+              print(f'    Z:             {cp.get(\"cz\",\"?\")}')
+              print(f'    Raio sclera:   {cp.get(\"sclera_r\",\"?\")} m ({round(cp.get(\"sclera_r\",0)*1000,1)}mm)')
+              print(f'    BVH valido:    {cp.get(\"valid\",\"?\")}')
+
+          print()
+          print('--- VALIDACOES ---')
+          v = r.get('validations', {})
+          print('  Diagnostico completo: ', v.get('diagnosis_complete','?'))
+          print('  Correcao tecnica OK:  ', v.get('fix_technical','?'))
+          print('  Aprovacao visual:     ', v.get('fix_visual','(requer inspecao humana)'))
+          d2 = v.get('fix_technical_details', {})
+          for side in ['L', 'R']:
+              checks = d2.get(f'eye_{side}', {})
+              print(f'  Olho {side} checks: {checks}')
+
+          print()
+          print('--- OCLUSAO DO CABELO ---')
+          ho = r.get('hair_occlusion', {})
+          for side in ['L', 'R']:
+              h = ho.get(side, {})
+              print(f'  Olho {side}: oclusao_likely={h.get(\"occlusion_likely\",\"?\")}  overlaps={h.get(\"hair_overlaps_bb\",[])}')
+
+          print()
+          print('--- RENDERS ---')
+          for k, v2 in r.get('renders', {}).items():
+              if isinstance(v2, dict) and 'rendered' in v2:
+                  print(f'  {v2[\"file\"]}: {\"OK\" if v2[\"rendered\"] else \"FALHOU\"}')
+
+          print()
+          if r.get('error'):
+              print('ERRO:', r['error'])
+              print('TRACEBACK:', r.get('traceback','')[:500])
+          " \
+            || cat output/diagnose-b9-eyes/diag_report.json 2>/dev/null \
+            || echo "Relatorio nao gerado"
+
+      - name: Publicar artefactos — Diagnostico e Correcao
+        if: always()
+        uses: actions/upload-artifact@v4
+        with:
+          name: b9-diagnostico-profundo-e-correcao-olhos
+          path: |
+            output/diagnose-b9-eyes/diag_report.json
+            output/diagnose-b9-eyes/female_b9_fixed.blend
+            output/diagnose-b9-eyes/female_b9_fixed.glb
+            output/diagnose-b9-eyes/diag_01_face_no_hair.png
+            output/diagnose-b9-eyes/diag_02_face_markers.png
+            output/diagnose-b9-eyes/diag_03_face_side_no_hair.png
+            output/diagnose-b9-eyes/diag_04_face_with_hair.png
+            output/diagnose-b9-eyes/diag_05_full_body.png
+            output/diagnose-b9-eyes/diag_06_eyes_closeup.png
+            output/diagnose-b9-eyes/fix_01_face_no_hair.png
+            output/diagnose-b9-eyes/fix_02_face_front.png
+            output/diagnose-b9-eyes/fix_03_face_side.png
+            output/diagnose-b9-eyes/fix_04_face_with_hair.png
+            output/diagnose-b9-eyes/fix_05_full_body.png
+            output/diagnose-b9-eyes/fix_06_eyes_closeup.png
+          if-no-files-found: warn
