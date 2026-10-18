@@ -1,4 +1,4 @@
-name: MPFB T4 - T3 + madeixas fora da cara (base B7)
+name: MPFB T4 - Personagem Realista (PBR + Iluminacao Estudio + 6 Renders)
 
 on:
   workflow_dispatch:
@@ -9,7 +9,7 @@ permissions:
 jobs:
   generate:
     runs-on: ubuntu-latest
-    timeout-minutes: 45
+    timeout-minutes: 60
 
     steps:
       - uses: actions/checkout@v4
@@ -32,7 +32,7 @@ jobs:
           fi
           echo "MPFB ZIP: $(du -sh mpfb2.zip | cut -f1)"
 
-      - name: Gerar modelo T4
+      - name: Gerar modelo T4 (PBR + estudio + 6 renders)
         env:
           MPFB_ZIP: ${{ github.workspace }}/mpfb2.zip
           MPFB_OUTPUT: ${{ github.workspace }}/output/mpfb-t4
@@ -43,28 +43,46 @@ jobs:
           --python-exit-code 1
           --python scripts/characters/create_female_t4.py
 
-      - name: Verificar ficheiros e relatorios produzidos
+      - name: Verificar ficheiros produzidos
         if: always()
         run: |
           echo "=== Ficheiros em output/mpfb-t4 ==="
           ls -lh output/mpfb-t4/ 2>/dev/null || echo "Directorio vazio ou inexistente"
           echo ""
-          cat output/mpfb-t4/validation_report.md 2>/dev/null || echo "Resumo nao gerado"
+          echo "=== Relatorio de validacao ==="
+          cat output/mpfb-t4/validation_report.md 2>/dev/null || echo "Relatorio nao gerado"
+          echo ""
+          echo "=== Diagnostico dos olhos ==="
+          python3 -c "
+          import json, sys
+          try:
+            d = json.load(open('output/mpfb-t4/diagnostic_report.json'))
+            eyes = d.get('eyes', {})
+            for s in ('L','R'):
+              p = eyes.get(f'placement_{s}', {})
+              print(f'Olho {s}: {p.get(\"classification\",\"?\")} h={p.get(\"height_ratio\",\"?\")} pele={p.get(\"skin_state\",\"?\")}')
+            print('Separacao:', eyes.get('eye_separation_m'), 'm')
+            print('Status:', d.get('status'))
+          except Exception as e:
+            print('Erro ao ler diagnostico:', e)
+          " 2>/dev/null || echo "Diagnostico nao disponivel"
 
       - name: Publicar artefactos
         if: always()
         uses: actions/upload-artifact@v4
         with:
-          name: mpfb-t4-olhos-e-cabelo
+          name: mpfb-t4-realista
           path: |
             output/mpfb-t4/mpfb-t4-report.json
             output/mpfb-t4/diagnostic_report.json
             output/mpfb-t4/validation_report.md
             output/mpfb-t4/mpfb-female-t4.blend
             output/mpfb-t4/mpfb-female-t4.glb
-            output/mpfb-t4/t4_view_front.png
-            output/mpfb-t4/t4_view_side.png
-            output/mpfb-t4/t4_view_threequarter.png
-            output/mpfb-t4/t4_view_eyes_closeup.png
-            output/mpfb-t4/t4_view_front_no_hair.png
+            output/mpfb-t4/t4_01_full_front.png
+            output/mpfb-t4/t4_02_full_side.png
+            output/mpfb-t4/t4_03_full_back.png
+            output/mpfb-t4/t4_04_three_quarter.png
+            output/mpfb-t4/t4_05_face_closeup.png
+            output/mpfb-t4/t4_06_eyes_closeup.png
           if-no-files-found: warn
+          retention-days: 30
