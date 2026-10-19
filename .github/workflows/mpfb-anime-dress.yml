@@ -1,0 +1,73 @@
+name: MPFB Anime Dress - Vestido de Gala Vermelho
+
+on:
+  workflow_dispatch:
+
+permissions:
+  contents: read
+
+jobs:
+  generate:
+    runs-on: ubuntu-latest
+    timeout-minutes: 60
+
+    steps:
+      - uses: actions/checkout@v4
+
+      - name: Restaurar Blender 5.2.1
+        uses: actions/cache/restore@v4
+        with:
+          path: blender_bin
+          key: blender-5.2.1-linux-x64
+          fail-on-cache-miss: true
+
+      - name: Descarregar MPFB
+        run: curl -fL --retry 3 --retry-delay 5 -o mpfb2.zip https://files.makehumancommunity.org/plugins/mpfb2-latest.zip
+
+      - name: Verificar ZIP do MPFB
+        run: |
+          if [ ! -f mpfb2.zip ] || [ ! -s mpfb2.zip ]; then
+            echo "Erro: mpfb2.zip nao encontrado ou vazio." >&2
+            exit 1
+          fi
+          echo "MPFB ZIP: $(du -sh mpfb2.zip | cut -f1)"
+
+      - name: Criar diretorios de output
+        run: mkdir -p output/mpfb-dress reports
+
+      - name: Gerar vestido anime
+        env:
+          MPFB_ZIP: ${{ github.workspace }}/mpfb2.zip
+          MPFB_OUTPUT: ${{ github.workspace }}/output/mpfb-dress
+          MPFB_REPORTS: ${{ github.workspace }}/reports
+        run: >
+          ./blender_bin/blender
+          --background
+          --factory-startup
+          --python-exit-code 1
+          --python scripts/create_anime_dress.py
+
+      - name: Verificar outputs
+        if: always()
+        run: |
+          echo "=== output/mpfb-dress ==="
+          ls -lh output/mpfb-dress/ 2>/dev/null || echo "Vazio"
+          echo ""
+          echo "=== reports/dress_validation.json ==="
+          cat reports/dress_validation.json 2>/dev/null || echo "Nao gerado"
+
+      - name: Publicar artefactos
+        if: always()
+        uses: actions/upload-artifact@v4
+        with:
+          name: mpfb-anime-dress-gala
+          path: |
+            output/mpfb-dress/mpfb-female-dress-report.json
+            output/mpfb-dress/mpfb-female-dress.blend
+            output/mpfb-dress/mpfb-female-dress.glb
+            output/mpfb-dress/dress_front.png
+            output/mpfb-dress/dress_back.png
+            output/mpfb-dress/dress_side.png
+            output/mpfb-dress/dress_three_quarter.png
+            reports/dress_validation.json
+          if-no-files-found: warn
