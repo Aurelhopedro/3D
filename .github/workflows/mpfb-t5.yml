@@ -1,0 +1,88 @@
+name: MPFB T5 - Personagem Anime 3D (Toon Shading + Olhos Grandes + Cabelo Anime)
+
+on:
+  workflow_dispatch:
+
+permissions:
+  contents: read
+
+jobs:
+  generate:
+    runs-on: ubuntu-latest
+    timeout-minutes: 60
+
+    steps:
+      - uses: actions/checkout@v4
+
+      - name: Restaurar Blender 5.2.1
+        uses: actions/cache/restore@v4
+        with:
+          path: blender_bin
+          key: blender-5.2.1-linux-x64
+          fail-on-cache-miss: true
+
+      - name: Descarregar MPFB
+        run: curl -fL --retry 3 --retry-delay 5 -o mpfb2.zip https://files.makehumancommunity.org/plugins/mpfb2-latest.zip
+
+      - name: Verificar ZIP do MPFB
+        run: |
+          if [ ! -f mpfb2.zip ] || [ ! -s mpfb2.zip ]; then
+            echo "Erro: mpfb2.zip nao foi descarregado ou esta vazio." >&2
+            exit 1
+          fi
+          echo "MPFB ZIP: $(du -sh mpfb2.zip | cut -f1)"
+
+      - name: Gerar modelo T5 (anime 3D)
+        env:
+          MPFB_ZIP: ${{ github.workspace }}/mpfb2.zip
+          MPFB_OUTPUT: ${{ github.workspace }}/output/mpfb-t5
+        run: >
+          ./blender_bin/blender
+          --background
+          --factory-startup
+          --python-exit-code 1
+          --python scripts/characters/create_female_t5.py
+
+      - name: Verificar ficheiros produzidos
+        if: always()
+        run: |
+          echo "=== Ficheiros em output/mpfb-t5 ==="
+          ls -lh output/mpfb-t5/ 2>/dev/null || echo "Directorio vazio ou inexistente"
+          echo ""
+          echo "=== Relatorio de validacao ==="
+          cat output/mpfb-t5/validation_report.md 2>/dev/null || echo "Relatorio nao gerado"
+          echo ""
+          echo "=== Diagnostico dos olhos ==="
+          python3 -c "
+          import json, sys
+          try:
+            d = json.load(open('output/mpfb-t5/diagnostic_report.json'))
+            eyes = d.get('eyes', {})
+            for s in ('L','R'):
+              p = eyes.get(f'placement_{s}', {})
+              print(f'Olho {s}: {p.get(\"classification\",\"?\")} h={p.get(\"height_ratio\",\"?\")} pele={p.get(\"skin_state\",\"?\")}')
+            print('Separacao:', eyes.get('eye_separation_m'), 'm')
+            print('Status:', d.get('overall_status'))
+          except Exception as e:
+            print('Erro ao ler diagnostico:', e)
+          " 2>/dev/null || echo "Diagnostico nao disponivel"
+
+      - name: Publicar artefactos
+        if: always()
+        uses: actions/upload-artifact@v4
+        with:
+          name: mpfb-t5-anime
+          path: |
+            output/mpfb-t5/mpfb-t5-report.json
+            output/mpfb-t5/diagnostic_report.json
+            output/mpfb-t5/validation_report.md
+            output/mpfb-t5/mpfb-female-t5.blend
+            output/mpfb-t5/mpfb-female-t5.glb
+            output/mpfb-t5/t5_01_full_front.png
+            output/mpfb-t5/t5_02_full_side.png
+            output/mpfb-t5/t5_03_three_quarter.png
+            output/mpfb-t5/t5_04_face_closeup.png
+            output/mpfb-t5/t5_05_eyes_closeup.png
+            output/mpfb-t5/t5_06_full_body_back.png
+          if-no-files-found: warn
+          retention-days: 30
