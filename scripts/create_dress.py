@@ -14,6 +14,13 @@ random.seed(72)
 bpy.ops.object.select_all(action='SELECT'); bpy.ops.object.delete(use_global=False)
 scene=bpy.context.scene
 scene.render.engine='CYCLES'; scene.cycles.samples=int(os.environ.get('DRESS_SAMPLES','24'))
+# Ubuntu Blender 4.0.2 may be built without OpenImageDenoise.
+# Disable both render and viewport denoising before any render.
+scene.cycles.use_denoising = False
+scene.cycles.use_preview_denoising = False
+for layer in scene.view_layers:
+ if hasattr(layer, 'cycles'):
+  layer.cycles.use_denoising = False
 scene.render.resolution_x=int(os.environ.get('DRESS_RES','720'))
 scene.render.resolution_y=int(os.environ.get('DRESS_RES','720'))
 scene.render.resolution_percentage=100
