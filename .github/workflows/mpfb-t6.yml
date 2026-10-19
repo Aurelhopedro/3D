@@ -1,0 +1,70 @@
+name: MPFB T6 - Anime Cel-Shading (EEVEE + Freestyle)
+
+on:
+  workflow_dispatch:
+
+permissions:
+  contents: read
+
+jobs:
+  generate:
+    runs-on: ubuntu-latest
+    timeout-minutes: 30
+
+    steps:
+      - uses: actions/checkout@v4
+
+      - name: Restaurar Blender 5.2.1
+        uses: actions/cache/restore@v4
+        with:
+          path: blender_bin
+          key: blender-5.2.1-linux-x64
+          fail-on-cache-miss: true
+
+      - name: Criar diretorios
+        run: mkdir -p output/mpfb-t6
+
+      - name: Gerar T6 (EEVEE + Freestyle, sem MPFB)
+        env:
+          MPFB_OUTPUT: ${{ github.workspace }}/output/mpfb-t6
+        run: >
+          ./blender_bin/blender
+          --background
+          --factory-startup
+          --python-exit-code 1
+          --python scripts/characters/create_female_t6.py
+
+      - name: Verificar outputs
+        if: always()
+        run: |
+          echo "=== output/mpfb-t6 ==="
+          ls -lh output/mpfb-t6/ 2>/dev/null || echo "Vazio"
+          echo ""
+          echo "=== Relatorio ==="
+          python3 -c "
+          import json, sys
+          try:
+              r = json.load(open('output/mpfb-t6/mpfb-t6-report.json'))
+              print('Status:', r.get('status'))
+              print('Renders:', list(r.get('renders',{}).keys()))
+              print('Validacoes:', {k: v.get('pass') for k,v in r.get('validations',{}).items() if isinstance(v,dict)})
+              if r.get('error'): print('ERRO:', r['error'])
+          except Exception as e:
+              print('Nao foi possivel ler o relatorio:', e)
+          " 2>/dev/null || true
+
+      - name: Publicar artefactos
+        if: always()
+        uses: actions/upload-artifact@v4
+        with:
+          name: mpfb-t6-anime-eevee
+          path: |
+            output/mpfb-t6/mpfb-t6-report.json
+            output/mpfb-t6/mpfb-female-t6.blend
+            output/mpfb-t6/mpfb-female-t6.glb
+            output/mpfb-t6/t6_01_front.png
+            output/mpfb-t6/t6_02_three_quarter.png
+            output/mpfb-t6/t6_03_face.png
+            output/mpfb-t6/t6_04_back.png
+            output/mpfb-t6/t6_05_side.png
+          if-no-files-found: warn
