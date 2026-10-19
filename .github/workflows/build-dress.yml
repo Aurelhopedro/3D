@@ -1,0 +1,59 @@
+name: Build vestido Cobre e Onix
+on:
+  workflow_dispatch:
+    inputs:
+      samples:
+        description: 'Samples Cycles (8-64)'
+        required: false
+        default: '16'
+      resolution:
+        description: 'Resolução quadrada (480-1024)'
+        required: false
+        default: '640'
+permissions:
+  contents: read
+jobs:
+  build:
+    runs-on: ubuntu-24.04
+    timeout-minutes: 55
+    steps:
+      - uses: actions/checkout@v4
+      - name: Instalar Blender (Ubuntu)
+        run: |
+          sudo apt-get update
+          sudo apt-get install -y blender
+          blender --version
+      - name: Validar parâmetros e criar vestido
+        env:
+          RAW_SAMPLES: ${{ inputs.samples }}
+          RAW_RES: ${{ inputs.resolution }}
+        run: |
+          python3 - <<'PY'
+          import os
+          s=int(os.environ['RAW_SAMPLES']);r=int(os.environ['RAW_RES'])
+          assert 8<=s<=64 and 480<=r<=1024, 'Parâmetros fora dos limites'
+          with open(os.environ['GITHUB_ENV'],'a') as f:
+              f.write(f'DRESS_SAMPLES={s}\nDRESS_RES={r}\n')
+          PY
+          mkdir -p outputs
+          DRESS_OUTPUT="$PWD/outputs" blender -b -t 2 --python scripts/create_dress.py
+      - name: Validar artefactos
+        run: |
+          python3 - <<'PY'
+          import json,pathlib
+          p=pathlib.Path('outputs')
+          for n in ['cobre_onix_dress.blend','cobre_onix_dress.glb','front.png','side.png','back.png','three_quarter.png','report.json']:
+              f=p/n
+              assert f.exists() and f.stat().st_size>100, f'Ficheiro ausente/vazio: {f}'
+          r=json.loads((p/'report.json').read_text())
+          assert r['geometry'] and r['status']=='generated_not_visually_approved'
+          print('Ficheiros verificados; qualidade visual ainda requer inspeção humana.')
+          PY
+      - name: Disponibilizar resultados
+        if: always()
+        uses: actions/upload-artifact@v4
+        with:
+          name: vestido-cobre-onix-${{ github.run_number }}
+          path: outputs/
+          if-no-files-found: warn
+          retention-days: 7
