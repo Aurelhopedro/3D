@@ -1,0 +1,6 @@
+# Pasta temporária de preparação de downloads (nunca versionar)
+.staging/
+__pycache__/
+*.pyc
+*.part
+*.tmp
