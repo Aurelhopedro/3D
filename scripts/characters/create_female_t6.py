@@ -1,7 +1,7 @@
 """
 T6 — Personagem Anime 3D estilo Isekai (inspirado em Tensei Shitara Slime Datta Ken)
 
-MOTOR: BLENDER_EEVEE_NEXT (nao Cycles)
+MOTOR: BLENDER_EEVEE (detecao automatica por versao)
 ESTILO: Cel-shading com faixas duras, Freestyle para contornos pretos
 CORPO: construido do zero em bmesh com proporcoes anime
        (sem MPFB — o MPFB gera malhas realistas, incompativeis com o visual anime)
@@ -96,11 +96,46 @@ C_OUTLINE   = "#000000"
 out = Path(os.environ.get("MPFB_OUTPUT", "output/mpfb-t6")).resolve()
 out.mkdir(parents=True, exist_ok=True)
 
+
+# ─────────────────────────────────────────────────────────────────────────────
+# DETETAR MOTOR EEVEE DISPONIVEL
+# Blender <= 4.1 usa "BLENDER_EEVEE"
+# Blender 4.2+ usou "BLENDER_EEVEE_NEXT"
+# Blender 5.x LTS voltou a "BLENDER_EEVEE"
+# ─────────────────────────────────────────────────────────────────────────────
+
+def _get_eevee_engine():
+    """Retorna o identificador correto do motor EEVEE para a versao instalada."""
+    import bpy
+    engines = {e.bl_idname for e in bpy.types.RenderEngine.__subclasses__()}
+    # Tambem verificar via enumeracao de RenderEngine registados
+    registered = set()
+    try:
+        for item in bpy.types.Scene.bl_rna.properties["render.engine"].enum_items:
+            registered.add(item.identifier)
+    except Exception:
+        pass
+    for name in ("BLENDER_EEVEE_NEXT", "BLENDER_EEVEE"):
+        if name in registered:
+            return name
+    # Fallback seguro: tentar atribuir e capturar erro
+    import bpy
+    scene = bpy.context.scene
+    for name in ("BLENDER_EEVEE_NEXT", "BLENDER_EEVEE"):
+        try:
+            scene.render.engine = name
+            return name
+        except TypeError:
+            continue
+    return "BLENDER_EEVEE"
+
+EEVEE_ENGINE = _get_eevee_engine()
+
 report = {
     "blender": bpy.app.version_string,
     "version": "t6",
     "style": "anime_isekai_cel_shading",
-    "engine": "BLENDER_EEVEE_NEXT",
+    "engine": EEVEE_ENGINE,
     "status": "started",
     "components": {},
     "validations": {},
@@ -828,8 +863,8 @@ def build_outfit():
 
 def setup_eevee_freestyle():
     scene = bpy.context.scene
-    # Motor EEVEE
-    scene.render.engine = "BLENDER_EEVEE_NEXT"
+    # Motor EEVEE — usar o identificador correto para esta versao do Blender
+    scene.render.engine = EEVEE_ENGINE
 
     # Freestyle
     scene.render.use_freestyle = True
