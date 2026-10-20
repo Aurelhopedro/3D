@@ -54,6 +54,12 @@ ROUTES = {
                            ("run.sh", b"echo hi")]),
     "/slip.zip": make_zip([("../evil.txt", b"evil")]),
     "/corrupt.zip": b"PK\x03\x04 not really a zip",
+    # ficheiros para testes de dependências glTF
+    "/model.gltf": b'{"asset":{"version":"2.0"},"buffers":[{"uri":"model.bin","byteLength":10}],"images":[{"uri":"textures/diff.jpg"}]}',
+    "/model.bin": b"BINARYDATA" + b"\x00" * 10,
+    "/textures/diff.jpg": b"\xff\xd8\xff" + b"J" * 40,
+    "/model_subdir.gltf": b'{"asset":{"version":"2.0"},"buffers":[{"uri":"geo/mesh.bin","byteLength":8}]}',
+    "/geo/mesh.bin": b"GEODATA!" + b"\x00" * 8,
 }
 
 
@@ -284,6 +290,125 @@ class TestPolyHavenSelector(unittest.TestCase):
         self.fail("polyhaven_food_apple_01 não encontrado em nature.json")
 
 
+# ---------------------------------------------------------------------------
+# Novos testes: dependências glTF via chave "include" (correcção 2026-10-20)
+# ---------------------------------------------------------------------------
+
+class TestPolyHavenIncludeDependencies(unittest.TestCase):
+    """Testa _polyhaven_expand_includes: extracção de dependências da chave 'include'.
+
+    Usa apenas stdlib; não requer rede.
+    """
+
+    def test_expand_includes_extracts_bin_and_textures(self):
+        """_polyhaven_expand_includes deve encontrar .bin e texturas."""
+        node = _POLYHAVEN_FOOD_APPLE_01_GLTF["gltf"]["1k"]["gltf"]
+        deps = dl._polyhaven_expand_includes(node)
+        names = [d["name"] for d in deps]
+        self.assertIn("food_apple_01.bin", names, "deve incluir .bin")
+        self.assertTrue(any("textures/" in n for n in names), "deve incluir texturas")
+
+    def test_expand_includes_marks_is_dependency(self):
+        """Dependências devem ter is_dependency=True."""
+        node = _POLYHAVEN_FOOD_APPLE_01_GLTF["gltf"]["1k"]["gltf"]
+        deps = dl._polyhaven_expand_includes(node)
+        self.assertTrue(all(d.get("is_dependency") for d in deps),
+                        "todos os itens expandidos devem ser marcados como dependência")
+
+    def test_expand_includes_preserves_relative_path_as_name(self):
+        """O campo 'name' deve ser o caminho relativo declarado pela API."""
+        node = _POLYHAVEN_FOOD_APPLE_01_GLTF["gltf"]["1k"]["gltf"]
+        deps = dl._polyhaven_expand_includes(node)
+        texture_dep = next((d for d in deps if "textures/" in d["name"]), None)
+        self.assertIsNotNone(texture_dep, "deve haver pelo menos uma dependência em subdiretório")
+        # O caminho relativo deve ser seguro (sem ../)
+        try:
+            common.safe_relative_path(texture_dep["name"])
+        except common.UnsafePathError:
+            self.fail(f"caminho de dependência não é seguro: {texture_dep['name']!r}")
+
+    def test_expand_includes_rejects_unsafe_paths(self):
+        """Caminhos perigosos na chave include devem ser ignorados."""
+        node = {
+            "url": "https://dl.polyhaven.org/model.gltf",
+            "include": {
+                "../evil.bin": {"url": "https://dl.polyhaven.org/evil.bin", "size": 100},
+                "safe/dep.bin": {"url": "https://dl.polyhaven.org/dep.bin", "size": 50},
+            }
+        }
+        deps = dl._polyhaven_expand_includes(node)
+        names = [d["name"] for d in deps]
+        self.assertNotIn("../evil.bin", names, "caminho com ../ deve ser rejeitado")
+        self.assertIn("safe/dep.bin", names, "caminho seguro deve ser aceite")
+
+    def test_expand_includes_no_duplicates(self):
+        """Mesmo URL não deve aparecer duas vezes."""
+        same_url = "https://dl.polyhaven.org/file/dep.bin"
+        node = {
+            "url": "https://dl.polyhaven.org/model.gltf",
+            "include": {
+                "dep.bin": {"url": same_url, "size": 10},
+            },
+            "nested": {
+                "include": {
+                    "dep.bin": {"url": same_url, "size": 10},
+                }
+            }
+        }
+        deps = dl._polyhaven_expand_includes(node)
+        urls = [d["url"] for d in deps]
+        self.assertEqual(len(urls), len(set(urls)), "não deve haver URLs duplicados")
+
+    def test_resolve_polyhaven_includes_bin_in_result(self):
+        """resolve_polyhaven deve devolver .gltf + .bin + texturas da chave include."""
+        src = {
+            "api_base": "https://api.polyhaven.com",
+            "api_hosts": ["api.polyhaven.com"],
+            "allowed_download_hosts": ["dl.polyhaven.org"],
+        }
+        entry = {
+            "source_asset_id": "food_apple_01",
+            "formats_wanted": ["gltf"],
+            "selector": ["1k", "gltf"],
+        }
+
+        def mock_fetch(_url):
+            return _POLYHAVEN_FOOD_APPLE_01_GLTF
+
+        result = dl.resolve_polyhaven(src, entry, mock_fetch)
+        urls = [c["url"] for c in result]
+        self.assertTrue(any("food_apple_01_1k.gltf" in u for u in urls),
+                        "deve incluir o .gltf principal")
+        self.assertTrue(any("food_apple_01.bin" in u for u in urls),
+                        "deve incluir o .bin (era a dependência em falta)")
+        self.assertTrue(any("diff_1k.jpg" in u for u in urls),
+                        "deve incluir textura difusa")
+
+    def test_resolve_polyhaven_only_includes_1k_dependencies(self):
+        """Deve incluir dependências do nodo 1k selecionado, não de 8k."""
+        src = {
+            "api_base": "https://api.polyhaven.com",
+            "api_hosts": ["api.polyhaven.com"],
+            "allowed_download_hosts": ["dl.polyhaven.org"],
+        }
+        entry = {
+            "source_asset_id": "food_apple_01",
+            "formats_wanted": ["gltf"],
+            "selector": ["1k", "gltf"],
+        }
+
+        def mock_fetch(_url):
+            return _POLYHAVEN_FOOD_APPLE_01_GLTF
+
+        result = dl.resolve_polyhaven(src, entry, mock_fetch)
+        urls = [c["url"] for c in result]
+        # A textura 8k não deve estar presente (não é dependência do modelo 1k selecionado)
+        # Nota: a chave include do nodo gltf/1k/gltf contém apenas dependências 1k,
+        # o .bin é partilhado (mesmo URL) — esse comportamento é da API Poly Haven.
+        self.assertFalse(any("diff_8k.jpg" in u for u in urls),
+                         "textura 8k não deve ser incluída ao seleccionar 1k")
+
+
 class TestRealRepoFiles(unittest.TestCase):
     def test_all_json_files_parse(self):
         for p in REAL_ROOT.rglob("*.json"):
@@ -412,6 +537,16 @@ class TestDownloads(LocalServerTestCase):
         c.update(kw)
         return c
 
+    def dep(self, path, name, **kw):
+        """Cria um candidato de dependência (is_dependency=True) com nome/caminho explícito."""
+        c = self.cand(path, name=name, is_dependency=True)
+        c.update(kw)
+        return c
+
+    # ------------------------------------------------------------------
+    # Testes originais preservados
+    # ------------------------------------------------------------------
+
     def test_successful_download_writes_metadata_and_license(self):
         self.cands["a1"] = [self.cand("/a.glb")]
         root = self.root({"furniture": [good_entry("asset_a", "a1")]})
@@ -465,7 +600,6 @@ class TestDownloads(LocalServerTestCase):
     def test_size_limit_enforced(self):
         self.cands["a1"] = [self.cand("/big.glb")]
         root = self.root({"furniture": [good_entry("asset_a", "a1")]})
-        # limite por ficheiro de 1 MB não chega: usar limite total mínimo impossível via função direta
         with self.assertRaises(dl.TooLarge):
             dest = pathlib.Path(tempfile.mkdtemp()) / "b.glb"
             try:
@@ -477,7 +611,7 @@ class TestDownloads(LocalServerTestCase):
     def test_total_size_limit_blocks_asset(self):
         self.cands["a1"] = [self.cand("/a.glb")]
         root = self.root({"furniture": [good_entry("asset_a", "a1")]})
-        ctx_report = dl.run(root, "download", max_total_mb=0)  # 0 MB: nada cabe
+        ctx_report = dl.run(root, "download", max_total_mb=0)
         self.assertEqual(ctx_report["results"][0]["status"], "blocked_total_size_limit")
         self.assertFalse((root / "assets" / "furniture" / "asset_a").exists())
 
@@ -593,7 +727,6 @@ class TestDownloads(LocalServerTestCase):
         root = self.root({"furniture": [good_entry("asset_a", "a1")]})
         dl.run(root, "download")
         self.assertEqual(dl.run(root, "update")["results"][0]["status"], "up_to_date")
-        # a fonte muda
         self.cands["a1"] = [self.cand("/b.glb", md5=__import__("hashlib").md5(GLB_B).hexdigest(), size=len(GLB_B),
                                       keypath=["files", "a.glb"])]
         (root / "assets" / "furniture" / "asset_a" / "a.glb").write_bytes(b"edited locally")
@@ -650,6 +783,143 @@ class TestDownloads(LocalServerTestCase):
         rep = dl.run(root, "download")
         self.assertEqual(rep["results"][0]["status"], "blocked_existing_dir_not_managed")
         self.assertEqual((foreign / "mine.txt").read_text(), "important")
+
+    # ------------------------------------------------------------------
+    # Casos 1–8: dependências glTF via is_dependency
+    # ------------------------------------------------------------------
+
+    def test_gltf_with_bin_dependency_downloads_both(self):
+        """Caso 1: glTF com .bin externo — ambos devem ser descarregados e validados."""
+        # .gltf referencia model.bin; a dependência é marcada is_dependency=True
+        gltf_content = b'{"asset":{"version":"2.0"},"buffers":[{"uri":"model.bin","byteLength":20}]}'
+        ROUTES["/dep_model.gltf"] = gltf_content
+        ROUTES["/dep_model.bin"] = b"B" * 20
+        self.cands["gltf1"] = [
+            self.cand("/dep_model.gltf", name="dep_model.gltf"),
+            self.dep("/dep_model.bin", name="model.bin"),
+        ]
+        root = self.root({"nature": [good_entry("gltf_asset", "gltf1", category="nature")]})
+        rep = dl.run(root, "download")
+        self.assertEqual(rep["results"][0]["status"], "downloaded",
+                         f"estado inesperado: {rep['results'][0]}")
+        adir = root / "assets" / "nature" / "gltf_asset"
+        self.assertTrue((adir / "dep_model.gltf").exists(), ".gltf deve existir")
+        self.assertTrue((adir / "model.bin").exists(), ".bin deve existir")
+        val = validate_assets.run(root)
+        self.assertEqual(val["failed"], 0, f"validação falhou: {val['results']}")
+
+    def test_gltf_with_external_texture_downloads_texture(self):
+        """Caso 2: glTF com textura externa — textura deve acompanhar o modelo."""
+        gltf_content = b'{"asset":{"version":"2.0"},"images":[{"uri":"textures/diff.jpg"}]}'
+        ROUTES["/tex_model.gltf"] = gltf_content
+        self.cands["gltf2"] = [
+            self.cand("/tex_model.gltf", name="tex_model.gltf"),
+            self.dep("/textures/diff.jpg", name="textures/diff.jpg"),
+        ]
+        root = self.root({"nature": [good_entry("tex_asset", "gltf2", category="nature")]})
+        rep = dl.run(root, "download")
+        self.assertEqual(rep["results"][0]["status"], "downloaded")
+        adir = root / "assets" / "nature" / "tex_asset"
+        self.assertTrue((adir / "tex_model.gltf").exists())
+        self.assertTrue((adir / "textures" / "diff.jpg").exists(),
+                        "textura em subdiretório deve existir")
+        val = validate_assets.run(root)
+        self.assertEqual(val["failed"], 0)
+
+    def test_gltf_dependency_in_subdirectory_preserves_path(self):
+        """Caso 3: dependência em subdiretório — o caminho relativo deve ser preservado."""
+        gltf_content = b'{"asset":{"version":"2.0"},"buffers":[{"uri":"geo/mesh.bin","byteLength":8}]}'
+        ROUTES["/subdir_model.gltf"] = gltf_content
+        self.cands["gltf3"] = [
+            self.cand("/subdir_model.gltf", name="subdir_model.gltf"),
+            self.dep("/geo/mesh.bin", name="geo/mesh.bin"),
+        ]
+        root = self.root({"nature": [good_entry("subdir_asset", "gltf3", category="nature")]})
+        rep = dl.run(root, "download")
+        self.assertEqual(rep["results"][0]["status"], "downloaded")
+        adir = root / "assets" / "nature" / "subdir_asset"
+        self.assertTrue((adir / "geo" / "mesh.bin").exists(),
+                        "dependência em subdiretório deve preservar o caminho")
+        val = validate_assets.run(root)
+        self.assertEqual(val["failed"], 0)
+
+    def test_gltf_missing_dependency_fails_validation(self):
+        """Caso 4: dependência inexistente — o recurso deve ser rejeitado como incompleto.
+
+        Simulamos um .gltf que referencia model.bin, mas não fornecemos o .bin
+        como candidato. O resultado deve ser downloaded (o .gltf existe), mas a
+        validação deve detectar a dependência em falta.
+        """
+        gltf_content = b'{"asset":{"version":"2.0"},"buffers":[{"uri":"missing.bin","byteLength":10}]}'
+        ROUTES["/missing_dep.gltf"] = gltf_content
+        # Só o .gltf, sem o .bin
+        self.cands["gltf4"] = [
+            self.cand("/missing_dep.gltf", name="missing_dep.gltf"),
+        ]
+        root = self.root({"nature": [good_entry("missing_dep_asset", "gltf4", category="nature")]})
+        dl.run(root, "download")
+        val = validate_assets.run(root)
+        self.assertEqual(val["failed"], 1, "validação deve detectar dependência em falta")
+        issues = val["results"][0]["issues"]
+        self.assertTrue(any("missing.bin" in i for i in issues),
+                        f"deve reportar missing.bin como em falta. Issues: {issues}")
+
+    def test_gltf_unsafe_dependency_path_is_blocked(self):
+        """Caso 5: caminho perigoso (../) numa dependência deve ser bloqueado."""
+        # Candidato com name=../evil.bin — safe_join deve bloquear
+        with self.assertRaises(common.UnsafePathError):
+            common.safe_relative_path("../evil.bin")
+
+        # No contexto de _polyhaven_expand_includes, caminhos perigosos são ignorados
+        node = {
+            "url": "https://dl.polyhaven.org/model.gltf",
+            "include": {
+                "../evil.bin": {"url": "https://dl.polyhaven.org/evil.bin", "size": 10},
+            }
+        }
+        deps = dl._polyhaven_expand_includes(node)
+        self.assertEqual(deps, [], "caminhos perigosos na chave include devem ser ignorados")
+
+    def test_dependency_from_unauthorized_host_is_blocked(self):
+        """Caso 6: dependência de host não autorizado deve ser bloqueada."""
+        # host evil.example não está em allowed_download_hosts
+        self.cands["gltf6"] = [
+            self.cand("/a.glb"),
+            {"url": "https://evil.example/evil.bin", "keypath": ["include", "evil.bin"],
+             "size": None, "md5": None, "name": "evil.bin", "is_dependency": True},
+        ]
+        root = self.root({"furniture": [good_entry("asset_evil", "gltf6")]})
+        rep = dl.run(root, "download")
+        # O download deve falhar porque o host da dependência não está autorizado
+        self.assertNotEqual(rep["results"][0]["status"], "downloaded",
+                            "não deve fazer download com host de dependência não autorizado")
+        self.assertFalse((root / "assets" / "furniture" / "asset_evil").exists())
+
+    def test_glb_standalone_no_regression(self):
+        """Caso 7: modelo GLB independente — o comportamento original não deve regredir."""
+        self.cands["glb1"] = [self.cand("/a.glb")]
+        root = self.root({"furniture": [good_entry("asset_glb", "glb1")]})
+        rep = dl.run(root, "download")
+        self.assertEqual(rep["results"][0]["status"], "downloaded")
+        adir = root / "assets" / "furniture" / "asset_glb"
+        self.assertTrue((adir / "a.glb").exists())
+        val = validate_assets.run(root)
+        self.assertEqual(val["failed"], 0)
+
+    def test_gltf_total_size_includes_dependencies(self):
+        """Caso 8: o conjunto completo (gltf + dependências) deve respeitar os limites."""
+        gltf_content = b'{"asset":{"version":"2.0"},"buffers":[{"uri":"model.bin","byteLength":20}]}'
+        ROUTES["/size_model.gltf"] = gltf_content
+        ROUTES["/size_model.bin"] = b"B" * 20
+        self.cands["gltf8"] = [
+            self.cand("/size_model.gltf", name="size_model.gltf"),
+            self.dep("/size_model.bin", name="model.bin"),
+        ]
+        root = self.root({"nature": [good_entry("size_asset", "gltf8", category="nature")]})
+        # max_total_mb=0: nada deve ser descarregado
+        rep = dl.run(root, "download", max_total_mb=0)
+        self.assertEqual(rep["results"][0]["status"], "blocked_total_size_limit")
+        self.assertFalse((root / "assets" / "nature" / "size_asset").exists())
 
 
 if __name__ == "__main__":
