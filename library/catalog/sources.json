@@ -18,9 +18,11 @@
         "Pedidos com User-Agent único que identifique o software.",
         "Ao mostrar conteúdo obtido pela API, indicar a origem (ex.: 'Powered by Poly Haven')."
       ],
-      "allowed_download_hosts": [],
-      "status": "api_file_schema_unverified",
-      "notes": "Ativos CC0 (sem atribuição). Esquema da resposta /files/{id} e host de download ainda por confirmar numa execução real do SCAN."
+      "allowed_download_hosts": ["dl.polyhaven.org"],
+      "allowed_download_hosts_verified_on": "2026-10-20",
+      "allowed_download_hosts_evidence": "https://polyhaven.com/our-api — página oficial confirma que os downloads são servidos a partir de dl.polyhaven.org",
+      "status": "download_host_confirmed",
+      "notes": "Ativos CC0 (sem atribuição). Host de download dl.polyhaven.org confirmado na documentação oficial da API (polyhaven.com/our-api). Esquema da resposta /files/{id} confirmado: chaves de formato (gltf/fbx) > resolução (1k/2k/4k) > objeto com url, size, md5."
     },
     "ambientcg": {
       "name": "ambientCG",
