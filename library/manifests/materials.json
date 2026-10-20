@@ -1,0 +1,49 @@
+{
+  "schema_version": 1,
+  "category": "materials",
+  "description": "Materiais e texturas PBR. IDs vindos de exemplos da documentação oficial da ambientCG.",
+  "assets": [
+    {
+      "id": "ambientcg_pavingstones036",
+      "name": "Paving Stones 036",
+      "subcategory": "stone",
+      "source": "ambientcg",
+      "source_asset_id": "PavingStones036",
+      "source_url": "https://ambientcg.com/a/PavingStones036",
+      "license": "CC0-1.0",
+      "license_verified": true,
+      "license_evidence_url": "https://docs.ambientcg.com/license/",
+      "license_verified_on": "2026-10-20",
+      "commercial_use": true,
+      "redistribution_allowed": true,
+      "attribution": "Não exigida (CC0). Texto de crédito opcional indicado pela ambientCG.",
+      "formats_wanted": [],
+      "selector": [],
+      "rigged": false,
+      "animated": false,
+      "download_status": "pending",
+      "notes": "Selector vazio: o SCAN lista os pacotes candidatos (resoluções/formatos)."
+    },
+    {
+      "id": "ambientcg_bricks092",
+      "name": "Bricks 092",
+      "subcategory": "masonry",
+      "source": "ambientcg",
+      "source_asset_id": "Bricks092",
+      "source_url": "https://ambientcg.com/a/Bricks092",
+      "license": "CC0-1.0",
+      "license_verified": true,
+      "license_evidence_url": "https://docs.ambientcg.com/license/",
+      "license_verified_on": "2026-10-20",
+      "commercial_use": true,
+      "redistribution_allowed": true,
+      "attribution": "Não exigida (CC0). Texto de crédito opcional indicado pela ambientCG.",
+      "formats_wanted": [],
+      "selector": [],
+      "rigged": false,
+      "animated": false,
+      "download_status": "pending",
+      "notes": "Selector vazio: ver SCAN."
+    }
+  ]
+}
