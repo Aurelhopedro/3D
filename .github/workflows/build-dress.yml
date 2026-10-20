@@ -42,11 +42,13 @@ jobs:
           python3 - <<'PY'
           import json,pathlib
           p=pathlib.Path('outputs')
+          print('Ficheiros gerados:', [(f.name,f.stat().st_size) for f in p.glob('*')])
           for n in ['cobre_onix_dress.blend','cobre_onix_dress.glb','front.png','side.png','back.png','three_quarter.png','report.json']:
               f=p/n
               assert f.exists() and f.stat().st_size>100, f'Ficheiro ausente/vazio: {f}'
           r=json.loads((p/'report.json').read_text())
           assert r['geometry'] and r['status']=='generated_not_visually_approved'
+          assert r['glb_export']['success'],r['glb_export']
           print('Ficheiros verificados; qualidade visual ainda requer inspeção humana.')
           PY
       - name: Disponibilizar resultados
