@@ -38,7 +38,7 @@ from common import (  # noqa: E402
     sha256_file, utcnow, validate_entry_shape,
 )
 
-TOOL_VERSION = "0.1.0"
+TOOL_VERSION = "0.2.0"
 USER_AGENT = "Aurelhopedro-3D-library/0.1 (+https://github.com/Aurelhopedro/3D)"
 URL_KEYS = ("url", "downloadLink", "rawLink")
 RESERVED_ROOT_NAMES = frozenset({"metadata.json", "license.txt"})
@@ -222,15 +222,16 @@ def collect_candidates(node: Any, keypath: tuple = ()) -> List[Dict[str, Any]]:
 
 
 def candidate_rel_path(c: Dict[str, Any]) -> str:
+    # 1. nome explícito tem prioridade máxima (vem de include da Poly Haven ou campos name/fileName)
+    if c.get("name"):
+        try:
+            return str(safe_relative_path(c["name"]))
+        except UnsafePathError:
+            pass
     last = c["keypath"][-1] if c["keypath"] else ""
     if ("/" in last or "." in last) and not last.lower().startswith("http"):
         try:
             return str(safe_relative_path(last))
-        except UnsafePathError:
-            pass
-    if c.get("name"):
-        try:
-            return str(safe_relative_path(c["name"]))
         except UnsafePathError:
             pass
     base = os.path.basename(urllib.parse.unquote(urllib.parse.urlparse(c["url"]).path))
@@ -256,16 +257,127 @@ def select_candidates(cands: List[Dict[str, Any]], formats_wanted: List[str],
 # --------------------------------------------------------------------------
 # Resolvers (um por fonte)
 # --------------------------------------------------------------------------
+
+def _polyhaven_expand_includes(selected_entries: Any) -> List[Dict[str, Any]]:
+    """Para cada entrada selecionada com chave 'include', expande as dependências.
+
+    A API Poly Haven tem esta estrutura para modelos glTF:
+        {
+          "url": "model_1k.gltf",
+          "size": ...,
+          "md5": ...,
+          "include": {
+            "textures/diffuse_1k.jpg": {"url": ..., "size": ..., "md5": ...},
+            "model.bin": {"url": ..., "size": ..., "md5": ...}
+          }
+        }
+
+    As dependências em "include" são obrigatórias para que o modelo funcione:
+    o ficheiro .gltf referencia-as por caminho relativo.
+    Esta função extrai essas dependências como candidatos adicionais,
+    preservando o caminho relativo (chave do dict include) como 'name'.
+
+    Segurança:
+    - Apenas URLs HTTPS são aceites (verificação posterior por check_url).
+    - Caminhos com traversal (../) são rejeitados por safe_relative_path.
+    - Não se aceitam referências a hosts arbitrários (verificação posterior).
+    """
+    extras: List[Dict[str, Any]] = []
+    seen_urls: set = set()
+
+    def _walk(node: Any) -> None:
+        if not isinstance(node, dict):
+            return
+        inc = node.get("include")
+        if isinstance(inc, dict):
+            for rel_path, info in inc.items():
+                if not isinstance(info, dict):
+                    continue
+                url = None
+                for k in URL_KEYS:
+                    v = info.get(k)
+                    if isinstance(v, str) and v.startswith(("http://", "https://")):
+                        url = v
+                        break
+                if not url or url in seen_urls:
+                    continue
+                # Valida o caminho relativo antes de aceitar
+                try:
+                    safe_relative_path(rel_path)
+                except UnsafePathError:
+                    continue
+                seen_urls.add(url)
+                size = info.get("size")
+                md5 = info.get("md5")
+                extras.append({
+                    "url": url,
+                    "keypath": ["include", rel_path],
+                    "size": size if isinstance(size, int) and not isinstance(size, bool) else None,
+                    "md5": md5.lower() if isinstance(md5, str) and len(md5) == 32 else None,
+                    "name": rel_path,  # preserva o caminho relativo declarado pela API
+                    "is_dependency": True,
+                })
+        for v in node.values():
+            if isinstance(v, dict):
+                _walk(v)
+            elif isinstance(v, list):
+                for item in v:
+                    _walk(item)
+
+    _walk(selected_entries)
+    return extras
+
+
 def resolve_polyhaven(src: Dict[str, Any], entry: Dict[str, Any], fetch: Callable[[str], Any]):
+    """Resolve candidatos da Poly Haven, incluindo dependências glTF (bin/texturas).
+
+    Fluxo:
+    1. Obtém a resposta da API para o recurso.
+    2. Filtra pelo formato pretendido (ex: 'gltf').
+    3. Aplica select_candidates para encontrar o ficheiro principal.
+    4. Para cada ficheiro principal selecionado, extrai as dependências
+       declaradas na chave 'include' da API, com os caminhos relativos corretos.
+    5. Devolve a lista combinada: [principal, dep1, dep2, ...].
+
+    As dependências são marcadas com is_dependency=True e têm o campo 'name'
+    preenchido com o caminho relativo declarado pela API (ex: 'textures/diff.jpg').
+    """
     api = src["api_base"].rstrip("/")
     data = fetch(f"{api}/files/{urllib.parse.quote(entry['source_asset_id'])}")
-    node: Any = data
+
+    # Filtra pelo formato pretendido
     wanted = [w.lower() for w in (entry.get("formats_wanted") or [])]
     if wanted and isinstance(data, dict):
-        sub = {k: v for k, v in data.items() if k.lower() in wanted}
-        if sub:
-            node = sub
-    return collect_candidates(node)
+        node = {k: v for k, v in data.items() if k.lower() in wanted}
+        if not node:
+            node = data
+    else:
+        node = data
+
+    # Encontra todos os candidatos do nodo filtrado
+    all_cands = collect_candidates(node)
+
+    # Aplica o selector para encontrar o(s) ficheiro(s) principal(is)
+    selector = entry.get("selector") or []
+    formats_wanted = entry.get("formats_wanted") or []
+    principal = select_candidates(all_cands, formats_wanted, selector)
+
+    if not principal:
+        # Sem seleção: devolve todos os candidatos para que process_asset
+        # reporte no_candidates_selected com informação de diagnóstico
+        return all_cands
+
+    # Para cada ficheiro principal selecionado, extrai as dependências da
+    # sub-chave "include" correspondente na estrutura da API.
+    # Percorre o nodo filtrado para encontrar os blocos que contêm esses URLs.
+    dep_cands = _polyhaven_expand_includes(node)
+
+    # Remove duplicados: se uma dependência já estiver nos candidatos principais,
+    # não a adiciona novamente.
+    principal_urls = {c["url"] for c in principal}
+    dep_cands = [c for c in dep_cands if c["url"] not in principal_urls]
+
+    return principal + dep_cands
 
 
 def resolve_ambientcg(src: Dict[str, Any], entry: Dict[str, Any], fetch: Callable[[str], Any]):
@@ -453,14 +565,36 @@ def process_asset(ctx: Context, entry: Dict[str, Any], asset_id_filter: Optional
     except Exception as exc:  # noqa: BLE001 - reportado, não fatal
         return _result(entry, "failed_resolve", error=str(exc)[:300])
 
-    selected = select_candidates(cands, entry.get("formats_wanted") or [], entry.get("selector") or [])
+    # Para o scan e para relatórios, mostramos todos os candidatos.
+    # Para o download, separamos os candidatos principais dos de dependência.
+    # Os candidatos de dependência (is_dependency=True) são sempre incluídos
+    # quando o ficheiro principal é selecionado; não passam pelo selector
+    # porque não têm "gltf"/"1k" nos seus keypaths.
+    principal_cands = [c for c in cands if not c.get("is_dependency")]
+    dep_cands = [c for c in cands if c.get("is_dependency")]
+
+    selected_principal = select_candidates(
+        principal_cands, entry.get("formats_wanted") or [], entry.get("selector") or []
+    )
+
+    # Se há dependências (is_dependency), inclui-as junto com os selecionados principais.
+    # A seleção de dependências não usa o selector: são obrigatórias para o modelo funcionar.
+    if selected_principal:
+        selected = selected_principal + dep_cands
+    else:
+        selected = []
+
+    # Para scan: mostra todos os candidatos (principal + dependências) sem filtrar
+    all_for_report = cands
+
     allowed_hosts = list(src.get("allowed_download_hosts", []))
-    hosts_seen = sorted({(urllib.parse.urlparse(c["url"]).hostname or "").lower() for c in selected})
+    hosts_seen = sorted({(urllib.parse.urlparse(c["url"]).hostname or "").lower() for c in all_for_report})
     hosts_unconfirmed = [h for h in hosts_seen
                          if not any(h == a.lower() or h.endswith("." + a.lower()) for a in allowed_hosts)]
-    report_cands = [{"url": c["url"], "keypath": c["keypath"], "size": c["size"], "md5": c["md5"]}
-                    for c in selected[:50]]
-    common_info = {"candidates_total": len(cands), "candidates_selected": len(selected),
+    report_cands = [{"url": c["url"], "keypath": c["keypath"], "size": c["size"], "md5": c["md5"],
+                     "is_dependency": c.get("is_dependency", False)}
+                    for c in all_for_report[:50]]
+    common_info = {"candidates_total": len(all_for_report), "candidates_selected": len(selected),
                    "candidates": report_cands, "hosts_observed": hosts_seen,
                    "hosts_unconfirmed": hosts_unconfirmed}
 
