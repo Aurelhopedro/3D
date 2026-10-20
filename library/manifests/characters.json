@@ -1,0 +1,28 @@
+{
+  "schema_version": 1,
+  "category": "characters",
+  "description": "Personagens humanas. Entradas sem licença verificada ficam bloqueadas.",
+  "assets": [
+    {
+      "id": "quaternius_universal_base_characters_standard",
+      "name": "Universal Base Characters [Standard]",
+      "subcategory": "base_stylized",
+      "source": "quaternius",
+      "source_asset_id": null,
+      "source_url": "https://quaternius.itch.io/universal-base-characters",
+      "license": "CC0-1.0",
+      "license_verified": false,
+      "license_evidence_url": "https://quaternius.itch.io/universal-base-characters",
+      "license_verified_on": null,
+      "commercial_use": null,
+      "redistribution_allowed": null,
+      "attribution": null,
+      "formats_wanted": [],
+      "selector": [],
+      "rigged": true,
+      "animated": false,
+      "download_status": "blocked_license_unverified",
+      "notes": "A página indica CC0 e rig humanoide (6 modelos base, versão Standard ~122 MB), mas há relatos secundários de licença diferente em pacotes da Quaternius e não existe URL de download direto documentada. Fica bloqueado até verificação do ficheiro de licença do pacote."
+    }
+  ]
+}
