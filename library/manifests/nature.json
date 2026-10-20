@@ -18,11 +18,11 @@
       "redistribution_allowed": true,
       "attribution": "Não exigida (CC0). Crédito opcional a Poly Haven.",
       "formats_wanted": ["gltf"],
-      "selector": ["1k", "glb"],
+      "selector": ["1k", "gltf"],
       "rigged": false,
       "animated": false,
       "download_status": "pending",
-      "notes": "Selector corrigido para 'glb': o GLB é self-contained (geometria + texturas num único ficheiro), sem dependências externas. O gltf separado requer o .bin associado que estava a falhar na validação."
+      "notes": "Selector corrigido de ['1k','glb'] para ['1k','gltf']. A API Poly Haven expõe o formato 'gltf' (ficheiro .gltf + .bin + texturas), não 'glb'. Confirmado em https://api.polyhaven.com/files/food_apple_01 — chave de topo é 'gltf', sem entrada 'glb'."
     },
     {
       "id": "ambientcg_3dtreestump001",
