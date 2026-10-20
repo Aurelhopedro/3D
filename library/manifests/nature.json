@@ -1,8 +1,29 @@
 {
   "schema_version": 1,
   "category": "nature",
-  "description": "Natureza. ID vindo de exemplo da documentação de terceiros sobre a API da ambientCG.",
+  "description": "Natureza. Inclui modelos confirmados da Poly Haven e candidatos da ambientCG.",
   "assets": [
+    {
+      "id": "polyhaven_food_apple_01",
+      "name": "Food Apple 01",
+      "subcategory": "props",
+      "source": "polyhaven",
+      "source_asset_id": "food_apple_01",
+      "source_url": "https://polyhaven.com/a/food_apple_01",
+      "license": "CC0-1.0",
+      "license_verified": true,
+      "license_evidence_url": "https://polyhaven.com/license",
+      "license_verified_on": "2026-10-20",
+      "commercial_use": true,
+      "redistribution_allowed": true,
+      "attribution": "Não exigida (CC0). Crédito opcional a Poly Haven.",
+      "formats_wanted": ["gltf"],
+      "selector": ["1k", "gltf"],
+      "rigged": false,
+      "animated": false,
+      "download_status": "pending",
+      "notes": "ID food_apple_01 confirmado na Poly Haven via 3d.shep.bot (indexador independente). Selector '1k' + 'gltf' limita a selecção ao ficheiro gltf de resolução 1k, que é o menor disponível. Host dl.polyhaven.org confirmado na documentação oficial (polyhaven.com/our-api)."
+    },
     {
       "id": "ambientcg_3dtreestump001",
       "name": "3D Tree Stump 001",
@@ -22,7 +43,7 @@
       "rigged": false,
       "animated": false,
       "download_status": "pending",
-      "notes": "Tipo '3d-model' na API v3. Selector vazio: ver SCAN."
+      "notes": "Tipo '3d-model' na API v3. Selector vazio: host ambientCG por confirmar; bloqueado até adicionar allowed_download_hosts em sources.json."
     }
   ]
 }
