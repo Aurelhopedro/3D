@@ -129,6 +129,161 @@ def make_root(entries_by_cat, source_over=None):
     return tmp
 
 
+# ---------------------------------------------------------------------------
+# Teste de regressão: bug no_candidates_selected (selector "glb" vs "gltf")
+#
+# CAUSA DO BUG (corrigida em 2026-10-20):
+#   O manifesto nature.json tinha selector: ["1k", "glb"].
+#   A API Poly Haven expõe modelos com a chave "gltf" (ficheiro separado),
+#   nunca "glb" (self-contained). O term "glb" nunca aparecia no haystack
+#   gerado por collect_candidates, pelo que select_candidates devolvia [].
+#
+# ESTRUTURA REAL DA API (confirmada em 2026-10-20):
+#   api_data["gltf"]["1k"]["gltf"] = {url, size, md5, include: {...}}
+#   — 3 níveis: formato > resolução > tipo_de_ficheiro
+#   collect_candidates percorre recursivamente e encontra os URLs em qualquer
+#   profundidade; o selector filtra pelo haystack (keypath + url).
+# ---------------------------------------------------------------------------
+
+# Resposta representativa da API Poly Haven para food_apple_01 (apenas gltf/1k)
+_POLYHAVEN_FOOD_APPLE_01_GLTF = {
+    "gltf": {
+        "1k": {
+            "gltf": {
+                "include": {
+                    "textures/food_apple_01_diff_1k.jpg": {
+                        "size": 183791,
+                        "url": "https://dl.polyhaven.org/file/ph-assets/Models/jpg/1k/food_apple_01/food_apple_01_diff_1k.jpg",
+                        "md5": "3ddf2b8313f20c95f3e04fb057b32d7b",
+                    },
+                    "food_apple_01.bin": {
+                        "size": 170680,
+                        "url": "https://dl.polyhaven.org/file/ph-assets/Models/gltf/8k/food_apple_01/food_apple_01.bin",
+                        "md5": "26b23e40de43097b0185a0d93cd72d3b",
+                    },
+                    "textures/food_apple_01_nor_gl_1k.jpg": {
+                        "size": 63513,
+                        "url": "https://dl.polyhaven.org/file/ph-assets/Models/jpg/1k/food_apple_01/food_apple_01_nor_gl_1k.jpg",
+                        "md5": "e456cb63d6a4c298c826b63be0adfaf7",
+                    },
+                    "textures/food_apple_01_rough_1k.jpg": {
+                        "size": 53123,
+                        "url": "https://dl.polyhaven.org/file/ph-assets/Models/jpg/1k/food_apple_01/food_apple_01_rough_1k.jpg",
+                        "md5": "e46e242f52a3c2138a1e8c6ce0d82438",
+                    },
+                },
+                "size": 2705,
+                "url": "https://dl.polyhaven.org/file/ph-assets/Models/gltf/1k/food_apple_01/food_apple_01_1k.gltf",
+                "md5": "222a8e136b40f36c1acb87a6036c1106",
+            }
+        },
+        "8k": {
+            "gltf": {
+                "include": {
+                    "textures/food_apple_01_diff_8k.jpg": {
+                        "size": 7076781,
+                        "url": "https://dl.polyhaven.org/file/ph-assets/Models/jpg/8k/food_apple_01/food_apple_01_diff_8k.jpg",
+                        "md5": "ae2cceb4b22e4c76a0ad11087e8b6929",
+                    }
+                },
+                "size": 2705,
+                "url": "https://dl.polyhaven.org/file/ph-assets/Models/gltf/8k/food_apple_01/food_apple_01_8k.gltf",
+                "md5": "d822b5be90e7ddedfc7b7dcff98afd23",
+            }
+        },
+    }
+}
+
+
+class TestPolyHavenSelector(unittest.TestCase):
+    """Regressão: selector ['1k','glb'] → no_candidates_selected (bug corrigido).
+
+    Usa apenas stdlib; não requer rede.
+    """
+
+    def _candidates_for(self, data, formats_wanted, selector):
+        """Simula o que resolve_polyhaven + select_candidates fazem."""
+        wanted = [w.lower() for w in formats_wanted]
+        node = {k: v for k, v in data.items() if k.lower() in wanted} if wanted else data
+        all_cands = dl.collect_candidates(node)
+        return dl.select_candidates(all_cands, formats_wanted, selector)
+
+    def test_selector_glb_returns_zero_candidates(self):
+        """REGRESSÃO: selector ['1k','glb'] deve devolver 0 candidatos.
+
+        A API Poly Haven não tem formato 'glb' — só 'gltf'.
+        Este teste documenta o comportamento ANTERIOR (com o bug):
+        se alguém voltar a colocar 'glb' no selector, o teste avisa.
+        """
+        selected = self._candidates_for(
+            _POLYHAVEN_FOOD_APPLE_01_GLTF,
+            formats_wanted=["gltf"],
+            selector=["1k", "glb"],
+        )
+        self.assertEqual(
+            len(selected), 0,
+            "selector ['1k','glb'] não deve encontrar nada: 'glb' não existe na API Poly Haven",
+        )
+
+    def test_selector_gltf_returns_candidates(self):
+        """CORRECTO: selector ['1k','gltf'] deve encontrar candidatos."""
+        selected = self._candidates_for(
+            _POLYHAVEN_FOOD_APPLE_01_GLTF,
+            formats_wanted=["gltf"],
+            selector=["1k", "gltf"],
+        )
+        self.assertGreater(
+            len(selected), 0,
+            "selector ['1k','gltf'] deve encontrar pelo menos um candidato",
+        )
+
+    def test_selector_gltf_1k_url_matches_api(self):
+        """O URL seleccionado deve corresponder à API real."""
+        selected = self._candidates_for(
+            _POLYHAVEN_FOOD_APPLE_01_GLTF,
+            formats_wanted=["gltf"],
+            selector=["1k", "gltf"],
+        )
+        urls = [c["url"] for c in selected]
+        self.assertTrue(
+            any("food_apple_01_1k.gltf" in u for u in urls),
+            f"URL do glTF 1k não encontrado. URLs: {urls}",
+        )
+
+    def test_collect_candidates_finds_all_urls_recursively(self):
+        """collect_candidates deve percorrer os 3 níveis da API e encontrar todos os URLs."""
+        all_cands = dl.collect_candidates(_POLYHAVEN_FOOD_APPLE_01_GLTF)
+        # Deve encontrar: .gltf principal (x2 resoluções) + dependências (4 em 1k + 1 em 8k)
+        self.assertGreaterEqual(
+            len(all_cands), 3,
+            f"collect_candidates deve encontrar pelo menos 3 URLs, encontrou {len(all_cands)}",
+        )
+        urls = [c["url"] for c in all_cands]
+        self.assertTrue(
+            any("food_apple_01.bin" in u for u in urls),
+            "Deve incluir food_apple_01.bin como candidato",
+        )
+
+    def test_nature_manifest_selector_is_gltf_not_glb(self):
+        """O manifesto nature.json deve ter selector=['1k','gltf'], nunca 'glb'."""
+        manifest_path = REAL_ROOT / "manifests" / "nature.json"
+        manifest = json.loads(manifest_path.read_text(encoding="utf-8"))
+        for asset in manifest.get("assets", []):
+            if asset.get("id") == "polyhaven_food_apple_01":
+                selector = asset.get("selector", [])
+                self.assertNotIn(
+                    "glb", selector,
+                    f"polyhaven_food_apple_01 não deve ter 'glb' no selector (API não tem esse formato). "
+                    f"Selector actual: {selector}",
+                )
+                self.assertIn(
+                    "gltf", selector,
+                    f"polyhaven_food_apple_01 deve ter 'gltf' no selector. Selector actual: {selector}",
+                )
+                return
+        self.fail("polyhaven_food_apple_01 não encontrado em nature.json")
+
+
 class TestRealRepoFiles(unittest.TestCase):
     def test_all_json_files_parse(self):
         for p in REAL_ROOT.rglob("*.json"):
