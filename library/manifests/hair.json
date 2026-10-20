@@ -1,0 +1,28 @@
+{
+  "schema_version": 1,
+  "category": "hair",
+  "description": "Cabelos. Entradas sem licença verificada ficam bloqueadas.",
+  "assets": [
+    {
+      "id": "makehuman_hair_01_pack",
+      "name": "MakeHuman Hair 01 (pacote)",
+      "subcategory": "stylized_lowpoly",
+      "source": "makehuman",
+      "source_asset_id": null,
+      "source_url": "https://static.makehumancommunity.org/assets/assetpacks/index.html",
+      "license": "CC0-1.0",
+      "license_verified": false,
+      "license_evidence_url": "https://static.makehumancommunity.org/assets/assetpacks/index.html",
+      "license_verified_on": null,
+      "commercial_use": null,
+      "redistribution_allowed": null,
+      "attribution": null,
+      "formats_wanted": [],
+      "selector": [],
+      "rigged": null,
+      "animated": false,
+      "download_status": "blocked_license_unverified",
+      "notes": "A página de pacotes lista 'Hair 01' como CC0, mas a licença de cada asset tem de ser verificada e o URL do ficheiro do pacote não foi confirmado. Compatibilidade com corpos MPFB por testar."
+    }
+  ]
+}
