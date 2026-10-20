@@ -1,0 +1,220 @@
+name: Library Manager (Biblioteca 3D)
+
+# Fase 1: localizar, verificar licenças, descarregar, validar e catalogar recursos 3D.
+# Executar pelo telemóvel: separador Actions -> "Library Manager (Biblioteca 3D)" -> Run workflow.
+# Padrão: storage_mode=temporary (os recursos ficam só como artefacto; nada é commitado).
+
+on:
+  workflow_dispatch:
+    inputs:
+      operation:
+        description: 'Operação a executar'
+        type: choice
+        required: true
+        default: scan
+        options:
+          - scan
+          - download
+          - validate
+          - catalog
+          - update
+      category:
+        description: 'Categoria'
+        type: choice
+        required: true
+        default: all
+        options:
+          - all
+          - characters
+          - hair
+          - clothing
+          - vehicles
+          - environments
+          - architecture
+          - furniture
+          - nature
+          - animals
+          - animations
+          - materials
+          - lighting
+      max_downloads:
+        description: 'Limite de recursos descarregados por execução (1-20)'
+        type: string
+        required: false
+        default: '3'
+      max_total_mb:
+        description: 'Limite total de MB descarregados por execução (1-500)'
+        type: string
+        required: false
+        default: '100'
+      asset_id:
+        description: 'Opcional: id local de um único recurso (ex.: polyhaven_wooden_stool_02)'
+        type: string
+        required: false
+        default: ''
+      storage_mode:
+        description: 'temporary = só artefacto (padrão); persistent = commit no repositório'
+        type: choice
+        required: true
+        default: temporary
+        options:
+          - temporary
+          - persistent
+
+permissions:
+  contents: read
+
+concurrency:
+  group: library-manager
+  cancel-in-progress: false
+
+jobs:
+  library:
+    name: Biblioteca - ${{ inputs.operation }}
+    runs-on: ubuntu-24.04
+    timeout-minutes: 30
+    steps:
+      - uses: actions/checkout@v4
+
+      - name: Testes automatizados (guarda de segurança)
+        run: python3 -I -m unittest discover -s library/tests
+
+      - name: Validar parâmetros
+        env:
+          RAW_MAX_DOWNLOADS: ${{ inputs.max_downloads }}
+          RAW_MAX_TOTAL_MB: ${{ inputs.max_total_mb }}
+          RAW_ASSET_ID: ${{ inputs.asset_id }}
+        run: |
+          python3 - <<'PY'
+          import os, re, sys
+          def to_int(name, lo, hi):
+              raw = os.environ[name].strip()
+              if not raw.isdigit() or not (lo <= int(raw) <= hi):
+                  sys.exit(f"Parâmetro inválido {name}={raw!r} (esperado {lo}-{hi})")
+              return int(raw)
+          dl = to_int("RAW_MAX_DOWNLOADS", 1, 20)
+          mb = to_int("RAW_MAX_TOTAL_MB", 1, 500)
+          aid = os.environ["RAW_ASSET_ID"].strip()
+          if aid and not re.fullmatch(r"[a-z0-9][a-z0-9_\-]{0,63}", aid):
+              sys.exit(f"asset_id inválido: {aid!r}")
+          with open(os.environ["GITHUB_ENV"], "a") as f:
+              f.write(f"LIB_MAX_DOWNLOADS={dl}\nLIB_MAX_TOTAL_MB={mb}\nLIB_ASSET_ID={aid}\n")
+          PY
+
+      - name: Executar operação
+        env:
+          OPERATION: ${{ inputs.operation }}
+          CATEGORY: ${{ inputs.category }}
+        run: |
+          set -euo pipefail
+          T=library/tools
+          ASSET_ARGS=()
+          if [ -n "${LIB_ASSET_ID}" ]; then ASSET_ARGS=(--asset-id "${LIB_ASSET_ID}"); fi
+          case "$OPERATION" in
+            scan)
+              python3 -I $T/organize_assets.py
+              python3 -I $T/check_licenses.py --category "$CATEGORY"
+              python3 -I $T/download_assets.py --mode scan --category "$CATEGORY" "${ASSET_ARGS[@]}"
+              ;;
+            download)
+              python3 -I $T/organize_assets.py
+              python3 -I $T/check_licenses.py --category "$CATEGORY"
+              python3 -I $T/download_assets.py --mode download --category "$CATEGORY" \
+                --max-downloads "$LIB_MAX_DOWNLOADS" --max-total-mb "$LIB_MAX_TOTAL_MB" "${ASSET_ARGS[@]}"
+              python3 -I $T/validate_assets.py --category "$CATEGORY"
+              ;;
+            validate)
+              python3 -I $T/validate_assets.py --category "$CATEGORY"
+              ;;
+            catalog)
+              python3 -I $T/build_catalog.py
+              ;;
+            update)
+              python3 -I $T/download_assets.py --mode update --category "$CATEGORY" \
+                --max-downloads "$LIB_MAX_DOWNLOADS" --max-total-mb "$LIB_MAX_TOTAL_MB" "${ASSET_ARGS[@]}"
+              python3 -I $T/validate_assets.py --category "$CATEGORY"
+              ;;
+            *)
+              echo "Operação desconhecida: $OPERATION" >&2
+              exit 2
+              ;;
+          esac
+
+      - name: Resumo de armazenamento
+        if: always()
+        run: |
+          echo "### Armazenamento" >> "$GITHUB_STEP_SUMMARY"
+          du -sh library/assets library/reports library/catalog 2>/dev/null | sed 's/^/- /' >> "$GITHUB_STEP_SUMMARY" || true
+
+      - name: Disponibilizar resultados (artefacto)
+        if: always()
+        uses: actions/upload-artifact@v4
+        with:
+          name: library-output-${{ github.run_id }}
+          path: |
+            library/assets
+            library/catalog
+            library/reports
+          if-no-files-found: warn
+          retention-days: 7
+
+  persist:
+    name: Guardar no repositório (modo persistente)
+    needs: library
+    if: ${{ inputs.storage_mode == 'persistent' && (inputs.operation == 'download' || inputs.operation == 'update' || inputs.operation == 'catalog') }}
+    runs-on: ubuntu-24.04
+    timeout-minutes: 15
+    permissions:
+      contents: write
+    steps:
+      - uses: actions/checkout@v4
+
+      - uses: actions/download-artifact@v4
+        with:
+          name: library-output-${{ github.run_id }}
+          path: _incoming
+
+      - name: Verificar tamanhos, copiar e fazer commit
+        env:
+          OPERATION: ${{ inputs.operation }}
+          CATEGORY: ${{ inputs.category }}
+        run: |
+          set -euo pipefail
+          python3 - <<'PY'
+          import pathlib, shutil, sys
+          inc = pathlib.Path("_incoming")
+          MAX_FILE = 50 * 1024 * 1024      # aviso do GitHub a partir de 50 MB; bloqueio a 100 MB
+          MAX_TOTAL = 200 * 1024 * 1024    # limite conservador por execução
+          total = 0
+          for p in inc.rglob("*"):
+              if p.is_file():
+                  s = p.stat().st_size
+                  total += s
+                  if s > MAX_FILE:
+                      sys.exit(f"Ficheiro demasiado grande para commit: {p} ({s} bytes). Nada foi guardado.")
+          if total > MAX_TOTAL:
+              sys.exit(f"Total {total} bytes excede o limite de {MAX_TOTAL}. Nada foi guardado.")
+          # Copiar apenas pastas/ficheiros da biblioteca (nunca o resto do repositório)
+          for sub in ("assets", "reports"):
+              src = inc / sub
+              if src.is_dir():
+                  shutil.copytree(src, pathlib.Path("library") / sub, dirs_exist_ok=True)
+          for name in ("assets.json", "licenses.json"):
+              src = inc / "catalog" / name
+              if src.is_file():
+                  shutil.copy2(src, pathlib.Path("library/catalog") / name)
+          print(f"Total copiado: {total} bytes")
+          PY
+          rm -rf _incoming
+          git config user.name "github-actions[bot]"
+          git config user.email "41898282+github-actions[bot]@users.noreply.github.com"
+          # -f: o .gitignore da raiz ignora *.glb, *.obj, *.fbx e *.png
+          for p in library/assets library/reports library/catalog/assets.json library/catalog/licenses.json; do
+            if [ -e "$p" ]; then git add -f "$p"; fi
+          done
+          if git diff --cached --quiet; then
+            echo "Sem alterações: nenhum commit criado."
+          else
+            git commit -m "library: ${OPERATION} (${CATEGORY})"
+            git push
+          fi
