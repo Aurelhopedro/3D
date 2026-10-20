@@ -1,0 +1,95 @@
+{
+  "schema_version": 1,
+  "note": "Fontes avaliadas na Fase 1. Só 'content_license_verified: true' permite download automático. 'allowed_download_hosts' vazio significa que os hosts de download ainda NÃO foram confirmados: o SCAN reporta os hosts observados e o download fica bloqueado até serem adicionados aqui.",
+  "sources": {
+    "polyhaven": {
+      "name": "Poly Haven",
+      "homepage": "https://polyhaven.com",
+      "kind": "api",
+      "resolver": "polyhaven",
+      "content_license": "CC0-1.0",
+      "content_license_verified": true,
+      "license_evidence_url": "https://polyhaven.com/license",
+      "license_verified_on": "2026-10-20",
+      "api_base": "https://api.polyhaven.com",
+      "api_hosts": ["api.polyhaven.com"],
+      "api_terms_url": "https://github.com/Poly-Haven/Public-API/blob/master/ToS.md",
+      "api_requirements": [
+        "Pedidos com User-Agent único que identifique o software.",
+        "Ao mostrar conteúdo obtido pela API, indicar a origem (ex.: 'Powered by Poly Haven')."
+      ],
+      "allowed_download_hosts": [],
+      "status": "api_file_schema_unverified",
+      "notes": "Ativos CC0 (sem atribuição). Esquema da resposta /files/{id} e host de download ainda por confirmar numa execução real do SCAN."
+    },
+    "ambientcg": {
+      "name": "ambientCG",
+      "homepage": "https://ambientcg.com",
+      "kind": "api",
+      "resolver": "ambientcg",
+      "content_license": "CC0-1.0",
+      "content_license_verified": true,
+      "license_evidence_url": "https://docs.ambientcg.com/license/",
+      "license_verified_on": "2026-10-20",
+      "api_base": "https://ambientcg.com/api/v3/assets",
+      "api_hosts": ["ambientcg.com"],
+      "api_terms_url": "https://docs.ambientcg.com/api/",
+      "api_requirements": [],
+      "allowed_download_hosts": [],
+      "status": "api_file_schema_unverified",
+      "notes": "API v3 documentada (parâmetros id, type, include=downloads). Esquema de 'downloads' e host/CDN de download por confirmar no SCAN. A API v2 já não recebe atualizações."
+    },
+    "kenney": {
+      "name": "Kenney",
+      "homepage": "https://kenney.nl/assets",
+      "kind": "manual",
+      "resolver": "manual_pending",
+      "content_license": "CC0-1.0",
+      "content_license_verified": false,
+      "license_evidence_url": "https://kenney.nl/support",
+      "license_verified_on": null,
+      "allowed_download_hosts": [],
+      "status": "no_documented_download_api",
+      "notes": "A página de suporte indica CC0 para os pacotes, mas a licença de cada pacote tem de ser confirmada no ficheiro de licença incluído. Sem API de download documentada."
+    },
+    "quaternius": {
+      "name": "Quaternius",
+      "homepage": "https://quaternius.com",
+      "kind": "manual",
+      "resolver": "manual_pending",
+      "content_license": "CC0-1.0",
+      "content_license_verified": false,
+      "license_evidence_url": "https://quaternius.itch.io/universal-base-characters",
+      "license_verified_on": null,
+      "allowed_download_hosts": [],
+      "status": "per_pack_license_check_required",
+      "notes": "Páginas de pacotes indicam CC0, mas há relatos secundários de licença diferente em alguns pacotes: verificar pacote a pacote. Sem URL de download direto documentada (distribuição via itch.io/site)."
+    },
+    "makehuman": {
+      "name": "MakeHuman Community",
+      "homepage": "https://www.makehumancommunity.org/",
+      "kind": "manual",
+      "resolver": "manual_pending",
+      "content_license": "CC0-1.0",
+      "content_license_verified": false,
+      "license_evidence_url": "https://static.makehumancommunity.org/assets/assetpacks/index.html",
+      "license_verified_on": null,
+      "allowed_download_hosts": [],
+      "status": "per_asset_license_check_required",
+      "notes": "Pacotes de assets listados como CC0 ou CC-BY conforme o pacote (ex.: alguns materiais de olhos são CC-BY). Verificar licença por pacote/asset; CC-BY fica registado à parte, sem download automático."
+    },
+    "khronos_gltf_samples": {
+      "name": "Khronos glTF Sample Models",
+      "homepage": "https://github.com/KhronosGroup/glTF-Sample-Models",
+      "kind": "manual",
+      "resolver": "manual_pending",
+      "content_license": null,
+      "content_license_verified": false,
+      "license_evidence_url": null,
+      "license_verified_on": null,
+      "allowed_download_hosts": [],
+      "status": "licenses_vary_per_model",
+      "notes": "Licenças variáveis por modelo; usar apenas para testes de validação e nunca presumir CC0."
+    }
+  }
+}
