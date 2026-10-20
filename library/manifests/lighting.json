@@ -1,0 +1,28 @@
+{
+  "schema_version": 1,
+  "category": "lighting",
+  "description": "HDRIs, iluminação e câmaras. ID vindo de exemplo da documentação oficial da API do Poly Haven.",
+  "assets": [
+    {
+      "id": "polyhaven_abandoned_factory_canteen_01",
+      "name": "Abandoned Factory Canteen 01",
+      "subcategory": "hdri_indoor",
+      "source": "polyhaven",
+      "source_asset_id": "abandoned_factory_canteen_01",
+      "source_url": "https://polyhaven.com/a/abandoned_factory_canteen_01",
+      "license": "CC0-1.0",
+      "license_verified": true,
+      "license_evidence_url": "https://polyhaven.com/license",
+      "license_verified_on": "2026-10-20",
+      "commercial_use": true,
+      "redistribution_allowed": true,
+      "attribution": "Não exigida (CC0). Crédito opcional a Poly Haven.",
+      "formats_wanted": ["hdri"],
+      "selector": [],
+      "rigged": false,
+      "animated": false,
+      "download_status": "pending",
+      "notes": "A resolução máxima é muito grande; escolher uma resolução baixa no selector antes do download. A chave 'hdri' em formats_wanted é provisória até o SCAN mostrar o esquema real."
+    }
+  ]
+}
