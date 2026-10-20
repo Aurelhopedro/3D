@@ -1,0 +1,28 @@
+{
+  "schema_version": 1,
+  "category": "nature",
+  "description": "Natureza. ID vindo de exemplo da documentação de terceiros sobre a API da ambientCG.",
+  "assets": [
+    {
+      "id": "ambientcg_3dtreestump001",
+      "name": "3D Tree Stump 001",
+      "subcategory": "trees",
+      "source": "ambientcg",
+      "source_asset_id": "3DTreeStump001",
+      "source_url": "https://ambientcg.com/a/3DTreeStump001",
+      "license": "CC0-1.0",
+      "license_verified": true,
+      "license_evidence_url": "https://docs.ambientcg.com/license/",
+      "license_verified_on": "2026-10-20",
+      "commercial_use": true,
+      "redistribution_allowed": true,
+      "attribution": "Não exigida (CC0). Texto de crédito opcional indicado pela ambientCG.",
+      "formats_wanted": [],
+      "selector": [],
+      "rigged": false,
+      "animated": false,
+      "download_status": "pending",
+      "notes": "Tipo '3d-model' na API v3. Selector vazio: ver SCAN."
+    }
+  ]
+}
