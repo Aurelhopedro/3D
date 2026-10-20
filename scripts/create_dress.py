@@ -182,11 +182,47 @@ def render(name,loc):
  bpy.data.objects.remove(cam,do_unlink=True)
 render('front',(0,-4,1.3));render('side',(4,0,1.3));render('three_quarter',(3,-4,1.4));render('back',(0,4,1.3))
 blend=os.path.join(ROOT,'cobre_onix_dress.blend');bpy.ops.wm.save_as_mainfile(filepath=blend)
-# Exportação do vestido e manequim; excluir cenário e luzes.
-for o in bpy.context.selected_objects:o.select_set(False)
-for o in bpy.context.scene.objects:
- if o.type=='MESH' and o.name!='Palco':o.select_set(True)
-bpy.ops.export_scene.gltf(filepath=os.path.join(ROOT,'cobre_onix_dress.glb'),export_format='GLB',use_selection=True)
-report={'status':'generated_not_visually_approved','blender':bpy.app.version_string,'geometry':[{'name':o.name,'vertices':len(o.data.vertices),'faces':len(o.data.polygons)} for o in objects],'renders':['front.png','side.png','three_quarter.png','back.png'],'notes':['Reconstituição estilizada de referência frontal; costas e estrutura interna hipotéticas.','Manequim provisório: substituir por personagem real para ajuste final.','Sem rigging nem simulação de tecido.','Validação visual humana obrigatória.']}
-with open(os.path.join(ROOT,'report.json'),'w') as f:json.dump(report,f,indent=2,ensure_ascii=False)
+# Exportação GLB obrigatória, com diagnóstico verificável.
+# O .blend e as imagens continuam preservados mesmo se o exportador falhar.
+export_path=os.path.join(ROOT,'cobre_onix_dress.glb')
+export_status={'path':export_path,'success':False,'error':None}
+try:
+    # O Blender 4.0 do Ubuntu pode não trazer o add-on glTF ativado.
+    # A chamada a bpy.ops.export_scene.gltf deve ser verificada explicitamente.
+    if not hasattr(bpy.ops.export_scene,'gltf'):
+        raise RuntimeError('Operador glTF indisponível nesta instalação do Blender')
+    bpy.ops.object.select_all(action='DESELECT')
+    selected=[]
+    for obj in bpy.context.scene.objects:
+        if obj.type=='MESH' and obj.name!='Palco':
+            obj.select_set(True)
+            selected.append(obj)
+    if not selected:
+        raise RuntimeError('Nenhuma malha selecionada para exportar')
+    bpy.context.view_layer.objects.active=selected[0]
+    result=bpy.ops.export_scene.gltf(filepath=export_path,export_format='GLB',use_selection=True)
+    if 'FINISHED' not in result:
+        raise RuntimeError('Exportador retornou: '+str(result))
+    if not os.path.isfile(export_path) or os.path.getsize(export_path)<1024:
+        raise RuntimeError('Exportador terminou mas GLB ausente ou vazio')
+    export_status['success']=True
+    export_status['bytes']=os.path.getsize(export_path)
+    print('DRESS_GLB_SUCCESS',export_path,export_status['bytes'])
+except Exception as exc:
+    export_status['error']=str(exc)
+    traceback.print_exc()
+    print('DRESS_GLB_FAILURE',repr(exc),file=sys.stderr)
+
+report={'status':'generated_not_visually_approved' if export_status['success'] else 'partial_export_failed',
+        'blender':bpy.app.version_string,
+        'geometry':[{'name':o.name,'vertices':len(o.data.vertices),'faces':len(o.data.polygons)} for o in objects],
+        'renders':['front.png','side.png','three_quarter.png','back.png'],
+        'glb_export':export_status,
+        'notes':['Geometria atual é protótipo; não reproduz fielmente o vestido de referência.',
+                 'Manequim provisório; sem rigging nem simulação de tecido.',
+                 'Revisão da silhueta, mangas, V frontal e materiais ainda necessária.']}
+with open(os.path.join(ROOT,'report.json'),'w') as f:
+    json.dump(report,f,indent=2,ensure_ascii=False)
+if not export_status['success']:
+    sys.exit('Falha na exportação GLB; consultar report.json e logs')
 print('DRESS_BUILD_SUCCESS',blend)
