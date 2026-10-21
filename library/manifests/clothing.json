@@ -1,6 +1,29 @@
 {
   "schema_version": 1,
   "category": "clothing",
-  "description": "Roupas e moda (categoria prioritária). Nenhuma fonte com licença verificada e download documentado foi confirmada ainda. Registar compatibilidade de corpo/rigging/formato em cada entrada.",
-  "assets": []
+  "description": "Roupas e moda (categoria prioritária). Só há peças rígidas Poly Haven (CC0); roupa riggada/ajustável a corpo ainda sem fonte com licença verificada e download documentado. Registar compatibilidade de corpo/rigging/formato em cada entrada.",
+  "assets": [
+    {
+      "id": "polyhaven_fishermans_hat",
+      "name": "Fishermans Hat",
+      "subcategory": "headwear",
+      "source": "polyhaven",
+      "source_asset_id": "fishermans_hat",
+      "source_url": "https://polyhaven.com/a/fishermans_hat",
+      "author": "PierreB3D",
+      "license": "CC0-1.0",
+      "license_verified": true,
+      "license_evidence_url": "https://polyhaven.com/a/fishermans_hat",
+      "license_verified_on": "2026-10-21",
+      "commercial_use": true,
+      "redistribution_allowed": true,
+      "attribution": "Não exigida (CC0). Crédito opcional a Poly Haven / PierreB3D.",
+      "formats_wanted": ["gltf"],
+      "selector": ["1k", "gltf"],
+      "rigged": false,
+      "animated": false,
+      "download_status": "pending",
+      "notes": "Chapéu boonie de pano (Apparel & Personal Items/Headwear), ~10.3k tris, texturas até 4K (usa-se 1k). É um objeto rígido: NÃO é roupa riggada nem ajustada ao corpo MPFB/Quaternius; serve como acessório (parentar ao osso da cabeça). Selector ['1k','gltf'] ainda NÃO confirmado contra /files/fishermans_hat: correr 'scan' com asset_id=polyhaven_fishermans_hat antes do download."
+    }
+  ]
 }
