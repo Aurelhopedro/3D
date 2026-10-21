@@ -19,6 +19,7 @@ import argparse
 import json
 import os
 import pathlib
+import re
 import shutil
 import sys
 import time
@@ -38,13 +39,16 @@ from common import (  # noqa: E402
     sha256_file, utcnow, validate_entry_shape,
 )
 
-TOOL_VERSION = "0.2.0"
+TOOL_VERSION = "0.3.0"
 USER_AGENT = "Aurelhopedro-3D-library/0.1 (+https://github.com/Aurelhopedro/3D)"
 URL_KEYS = ("url", "downloadLink", "rawLink")
 RESERVED_ROOT_NAMES = frozenset({"metadata.json", "license.txt"})
 HARD_CAPS = {"max_downloads": 20, "max_total_mb": 500, "max_file_mb": 200}
 MAX_ZIP_ENTRIES = 2000
 MAX_ZIP_UNCOMPRESSED_MB = 300
+
+# Regex para commit SHA completo (40 hex) ou curto (>=7 hex)
+COMMIT_SHA_RE = re.compile(r"^[0-9a-f]{7,40}$")
 
 
 # --------------------------------------------------------------------------
@@ -254,21 +258,14 @@ def select_candidates(cands: List[Dict[str, Any]], formats_wanted: List[str],
 # --------------------------------------------------------------------------
 
 def _find_parent_dicts_of_urls(node: Any, target_urls: Set[str]) -> List[Any]:
-    """Encontra os dicts da API que contêm diretamente um dos URLs alvo.
-
-    A API Poly Haven tem a estrutura:
-        {"url": "model_1k.gltf", "size": ..., "md5": ..., "include": {...}}
-
-    Esta função encontra esses dicts (os que têm a chave "url" com o valor
-    que foi selecionado), para que possamos extrair o "include" apenas deles.
-    """
+    """Encontra os dicts da API que contêm diretamente um dos URLs alvo."""
     found: List[Any] = []
     if isinstance(node, dict):
         for k in URL_KEYS:
             v = node.get(k)
             if isinstance(v, str) and v in target_urls:
                 found.append(node)
-                return found  # este nodo já foi encontrado; não precisamos de descer
+                return found
         for v in node.values():
             found.extend(_find_parent_dicts_of_urls(v, target_urls))
     elif isinstance(node, list):
@@ -278,25 +275,7 @@ def _find_parent_dicts_of_urls(node: Any, target_urls: Set[str]) -> List[Any]:
 
 
 def _polyhaven_expand_includes(entry_dicts: List[Any]) -> List[Dict[str, Any]]:
-    """Extrai dependências da chave 'include' de uma lista de dicts da API Poly Haven.
-
-    Recebe apenas os dicts dos ficheiros selecionados (ex: o nodo gltf/1k/gltf),
-    não o nodo completo da API. Isso garante que só as dependências da variante
-    selecionada são incluídas.
-
-    A API Poly Haven declara dependências assim:
-        {
-          "url": "model_1k.gltf",
-          "include": {
-            "model.bin": {"url": ..., "size": ..., "md5": ...},
-            "textures/diff_1k.jpg": {"url": ..., "size": ..., "md5": ...}
-          }
-        }
-
-    Segurança:
-    - Caminhos com traversal (../) são rejeitados por safe_relative_path.
-    - URLs de hosts arbitrários são verificados depois por check_url.
-    """
+    """Extrai dependências da chave 'include' de uma lista de dicts da API Poly Haven."""
     extras: List[Dict[str, Any]] = []
     seen_urls: set = set()
 
@@ -337,16 +316,7 @@ def _polyhaven_expand_includes(entry_dicts: List[Any]) -> List[Dict[str, Any]]:
 
 
 def resolve_polyhaven(src: Dict[str, Any], entry: Dict[str, Any], fetch: Callable[[str], Any]):
-    """Resolve candidatos da Poly Haven, incluindo dependências glTF (bin/texturas).
-
-    Fluxo:
-    1. Obtém a resposta da API.
-    2. Filtra pelo formato pretendido (ex: 'gltf').
-    3. Seleciona o ficheiro principal com select_candidates.
-    4. Encontra os dicts da API que contêm os URLs selecionados.
-    5. Extrai as dependências ('include') APENAS desses dicts.
-    6. Devolve [principal, dep1, dep2, ...].
-    """
+    """Resolve candidatos da Poly Haven, incluindo dependências glTF."""
     api = src["api_base"].rstrip("/")
     data = fetch(f"{api}/files/{urllib.parse.quote(entry['source_asset_id'])}")
 
@@ -366,13 +336,9 @@ def resolve_polyhaven(src: Dict[str, Any], entry: Dict[str, Any], fetch: Callabl
     if not principal:
         return all_cands
 
-    # Encontra na estrutura da API os dicts que contêm os URLs selecionados,
-    # para extrair o "include" apenas desses dicts (não de toda a API).
     selected_urls = {c["url"] for c in principal}
     parent_dicts = _find_parent_dicts_of_urls(node, selected_urls)
     dep_cands = _polyhaven_expand_includes(parent_dicts)
-
-    # Remove duplicados com o principal
     dep_cands = [c for c in dep_cands if c["url"] not in selected_urls]
 
     return principal + dep_cands
@@ -385,19 +351,150 @@ def resolve_ambientcg(src: Dict[str, Any], entry: Dict[str, Any], fetch: Callabl
     return collect_candidates(data)
 
 
+def resolve_github_zip(src: Dict[str, Any], entry: Dict[str, Any],
+                       fetch: Callable[[str], Any]) -> List[Dict[str, Any]]:
+    """Resolver para repositórios GitHub públicos — descarrega o ZIP de um commit fixo.
+
+    A entrada no manifesto deve conter:
+      github_repo   : "owner/repo"      (ex: "KayKit-Game-Assets/KayKit-Character-Pack-Adventures-1.0")
+      github_commit : "40-hex-SHA"      (commit completo e imutável)
+      github_files  : ["path/in/repo"]  (lista de caminhos a extrair do ZIP; vazio = tudo permitido)
+
+    O ZIP gerado pelo GitHub para um commit é imutável: o conteúdo não muda
+    se o commit for um SHA completo (não uma branch/tag). O ZIP é descarregado
+    de codeload.github.com (host confirmado em sources.json).
+
+    Segurança:
+    - commit_sha obrigatório e validado por regex.
+    - O ZIP é extraído com as proteções habituais (ZIP Slip, symlinks, extensões).
+    - Nenhum código do repositório externo é executado.
+    - Os ficheiros são filtrados por github_files quando especificado.
+    """
+    repo = entry.get("github_repo", "")
+    commit = entry.get("github_commit", "")
+    files_wanted: List[str] = entry.get("github_files") or []
+
+    if not repo or "/" not in repo:
+        raise Blocked("blocked_github_no_repo", repr(repo))
+    if not commit or not COMMIT_SHA_RE.match(commit):
+        raise Blocked("blocked_github_no_commit",
+                      f"commit ausente ou inválido: {commit!r} — fixar sempre o SHA completo (40 hex)")
+
+    # URL imutável: GitHub gera o mesmo ZIP para o mesmo commit SHA
+    zip_url = f"https://codeload.github.com/{repo}/zip/{commit}"
+
+    # Nome local do ZIP (usado para candidate_rel_path)
+    zip_name = repo.split("/")[-1] + f"_{commit[:8]}.zip"
+
+    # O candidato é um único ZIP; o contexto de download irá extraí-lo
+    # e filtrar por github_files através de github_filter_paths nos metadados
+    cand: Dict[str, Any] = {
+        "url": zip_url,
+        "keypath": ["github_zip", repo, commit],
+        "size": None,
+        "md5": None,
+        "name": zip_name,
+        # Metadados extra passados ao extractor
+        "_github_repo": repo,
+        "_github_commit": commit,
+        "_github_files": files_wanted,
+    }
+    return [cand]
+
+
+def resolve_zip_url(src: Dict[str, Any], entry: Dict[str, Any],
+                    fetch: Callable[[str], Any]) -> List[Dict[str, Any]]:
+    """Resolver para pacotes ZIP com URL directa (ex: MakeHuman Community).
+
+    A entrada no manifesto deve conter:
+      zip_url       : URL HTTPS oficial do pacote
+      zip_sha256    : SHA-256 do arquivo (se conhecido; None bloqueia em modo strict)
+
+    Segurança: idêntica ao github_zip mas sem a verificação de commit.
+    Usa o SHA-256 para integridade quando disponível.
+    """
+    zip_url = entry.get("zip_url", "")
+    if not zip_url or not zip_url.startswith("https://"):
+        raise Blocked("blocked_zip_url_missing_or_insecure", repr(zip_url)[:80])
+
+    zip_name = os.path.basename(urllib.parse.urlparse(zip_url).path) or "asset.zip"
+    if not zip_name.lower().endswith(".zip"):
+        zip_name += ".zip"
+
+    cand: Dict[str, Any] = {
+        "url": zip_url,
+        "keypath": ["zip_url", zip_url],
+        "size": None,
+        "md5": None,
+        "name": zip_name,
+        "_zip_sha256": entry.get("zip_sha256"),
+    }
+    return [cand]
+
+
 RESOLVERS: Dict[str, Callable] = {
     "polyhaven": resolve_polyhaven,
     "ambientcg": resolve_ambientcg,
+    "github_zip": resolve_github_zip,
+    "zip_url": resolve_zip_url,
 }
 
 
 # --------------------------------------------------------------------------
 # ZIP seguro
 # --------------------------------------------------------------------------
-def extract_zip(zpath: pathlib.Path, dest: pathlib.Path, max_uncompressed: int) -> Dict[str, Any]:
-    """Extrai com proteção contra ZIP Slip, symlinks, zip bombs e extensões inesperadas."""
+def _github_strip_prefix(rel: str, repo: str, commit: str) -> Optional[str]:
+    """Remove o prefixo que o GitHub injeta em ZIPs de commit.
+
+    O GitHub gera ZIPs com um directório raiz do tipo:
+        <nome-do-repo>-<commit-curto>/
+    Exemplo: KayKit-Character-Pack-Adventures-1.0-672074b/Knight.glb
+
+    Esta função remove esse prefixo e devolve o caminho interno real.
+    Devolve None se o caminho não tiver prefixo (não deve acontecer).
+    """
+    repo_name = repo.split("/")[-1]
+    commit_short = commit[:7]
+    prefix = f"{repo_name}-{commit_short}/"
+    if rel.startswith(prefix):
+        return rel[len(prefix):]
+    # Tentativa alternativa: qualquer segmento inicial único
+    parts = rel.split("/", 1)
+    if len(parts) == 2 and parts[1]:
+        return parts[1]
+    return None
+
+
+def _github_file_wanted(inner_path: str, files_wanted: List[str]) -> bool:
+    """Verifica se um caminho interno do ZIP está na lista de ficheiros pretendidos.
+
+    Se files_wanted estiver vazio, todos os ficheiros são aceites.
+    A comparação é case-sensitive (igual ao GitHub) e aceita coincidência
+    parcial no final do caminho (ex: "Knight.glb" coincide com "Characters/Knight.glb").
+    """
+    if not files_wanted:
+        return True
+    ip_lower = inner_path.lower()
+    for wanted in files_wanted:
+        w_lower = wanted.lower()
+        if ip_lower == w_lower or ip_lower.endswith("/" + w_lower):
+            return True
+    return False
+
+
+def extract_zip(zpath: pathlib.Path, dest: pathlib.Path, max_uncompressed: int,
+                github_repo: str = "", github_commit: str = "",
+                github_files: Optional[List[str]] = None) -> Dict[str, Any]:
+    """Extrai com proteção contra ZIP Slip, symlinks, zip bombs e extensões inesperadas.
+
+    Quando github_repo e github_commit são fornecidos, remove o prefixo automático
+    do GitHub e filtra por github_files.
+    """
     skipped: List[str] = []
     extracted: List[str] = []
+    is_github = bool(github_repo and github_commit)
+    files_wanted: List[str] = github_files or []
+
     try:
         zf = zipfile.ZipFile(zpath)
     except zipfile.BadZipFile as exc:
@@ -411,7 +508,7 @@ def extract_zip(zpath: pathlib.Path, dest: pathlib.Path, max_uncompressed: int) 
         total_declared = 0
         for info in infos:
             try:
-                safe_relative_path(info.filename.rstrip("/") or "")
+                safe_relative_path(info.filename.rstrip("/") or "placeholder")
             except UnsafePathError as exc:
                 raise Blocked("blocked_zip_unsafe_path", f"{info.filename!r}: {exc}") from exc
             mode = (info.external_attr >> 16) & 0o170000
@@ -425,11 +522,29 @@ def extract_zip(zpath: pathlib.Path, dest: pathlib.Path, max_uncompressed: int) 
             if info.is_dir():
                 continue
             rel = info.filename
+
+            # Remover prefixo GitHub e filtrar por ficheiros pretendidos
+            if is_github:
+                inner = _github_strip_prefix(rel, github_repo, github_commit)
+                if inner is None:
+                    skipped.append(rel)
+                    continue
+                if not inner:
+                    skipped.append(rel)
+                    continue
+                if not _github_file_wanted(inner, files_wanted):
+                    skipped.append(rel)
+                    continue
+                rel = inner
+
             ext = pathlib.PurePosixPath(rel).suffix.lower()
             if ext not in ALLOWED_EXTENSIONS:
                 skipped.append(rel)
                 continue
-            target = safe_join(dest, rel)
+            try:
+                target = safe_join(dest, rel)
+            except UnsafePathError as exc:
+                raise Blocked("blocked_zip_unsafe_path", f"{rel!r}: {exc}") from exc
             target.parent.mkdir(parents=True, exist_ok=True)
             with zf.open(info) as src_fh, open(target, "wb") as out_fh:
                 while True:
@@ -659,11 +774,26 @@ def _download_asset(ctx: Context, entry: Dict[str, Any], src: Dict[str, Any],
             bytes_total += n
             if c.get("md5") and md5_file(target) != c["md5"]:
                 raise Blocked("failed_checksum", f"md5 diferente em {rel}")
+
+            # Verificar SHA-256 do ZIP quando fornecido pela fonte
+            if is_zip and c.get("_zip_sha256"):
+                actual = sha256_file(target)
+                if actual != c["_zip_sha256"]:
+                    raise Blocked("failed_checksum",
+                                  f"sha256 do ZIP diferente: esperado {c['_zip_sha256']}, obtido {actual}")
+
             source_files.append({"url": c["url"], "md5": c.get("md5"), "size": c.get("size"),
                                  "sha256": sha256_file(target), "path": rel})
             if is_zip:
                 dest_dir = target.parent
-                info = extract_zip(target, dest_dir, max_uncompressed)
+                # Passar metadados GitHub para extracção inteligente
+                gh_repo = c.get("_github_repo", "")
+                gh_commit = c.get("_github_commit", "")
+                gh_files = c.get("_github_files") or []
+                info = extract_zip(target, dest_dir, max_uncompressed,
+                                   github_repo=gh_repo,
+                                   github_commit=gh_commit,
+                                   github_files=gh_files)
                 skipped_ext.extend(info["skipped_extensions"])
                 target.unlink()
 
@@ -709,6 +839,9 @@ def _download_asset(ctx: Context, entry: Dict[str, Any], src: Dict[str, Any],
             "source_files": source_files,
             "skipped_extensions": sorted(set(skipped_ext)),
             "tool_version": TOOL_VERSION,
+            # Metadados de proveniência GitHub
+            "github_repo": entry.get("github_repo"),
+            "github_commit": entry.get("github_commit"),
         }
         save_json(asset_stage / "metadata.json", metadata)
         (asset_stage / "LICENSE.txt").write_text(license_notice(entry, now), encoding="utf-8")
