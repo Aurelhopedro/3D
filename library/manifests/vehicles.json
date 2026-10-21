@@ -18,7 +18,7 @@
       "commercial_use": true,
       "redistribution_allowed": true,
       "attribution": "Não exigida (CC0). Crédito voluntário: Kay Lousberg / KayKit.",
-      "formats_wanted": ["glb"],
+      "formats_wanted": [],
       "selector": [],
       "rigged": false,
       "animated": false,
@@ -26,7 +26,7 @@
       "github_commit": "63976910ca04d16f0fc531b9c614244be8128713",
       "github_files": ["car_taxi.glb"],
       "download_status": "pending",
-      "notes": "Carro táxi low-poly estilizado. Pack contém textura atlas partilhada (citybits_texture.png). GLB deverá embeber a textura ou referenciar o ficheiro PNG do mesmo ZIP. Confirmar estrutura real no SCAN. Commit 63976910 confirmado na Godot Asset Library."
+      "notes": "Carro táxi low-poly estilizado. formats_wanted=[] porque o resolver github_zip devolve directamente o ZIP. Confirmar nome exacto 'car_taxi.glb' no SCAN. Commit 63976910 confirmado na Godot Asset Library."
     },
     {
       "id": "kaykit_city_car_sedan",
@@ -43,7 +43,7 @@
       "commercial_use": true,
       "redistribution_allowed": true,
       "attribution": "Não exigida (CC0). Crédito voluntário: Kay Lousberg / KayKit.",
-      "formats_wanted": ["glb"],
+      "formats_wanted": [],
       "selector": [],
       "rigged": false,
       "animated": false,
@@ -51,7 +51,7 @@
       "github_commit": "63976910ca04d16f0fc531b9c614244be8128713",
       "github_files": ["car_sedan.glb"],
       "download_status": "pending",
-      "notes": "Sedan low-poly estilizado. Ver notas de kaykit_city_car_taxi."
+      "notes": "Sedan low-poly. formats_wanted=[] — ver nota do taxi."
     },
     {
       "id": "kaykit_city_car_hatchback",
@@ -68,7 +68,7 @@
       "commercial_use": true,
       "redistribution_allowed": true,
       "attribution": "Não exigida (CC0). Crédito voluntário: Kay Lousberg / KayKit.",
-      "formats_wanted": ["glb"],
+      "formats_wanted": [],
       "selector": [],
       "rigged": false,
       "animated": false,
@@ -76,7 +76,7 @@
       "github_commit": "63976910ca04d16f0fc531b9c614244be8128713",
       "github_files": ["car_hatchback.glb"],
       "download_status": "pending",
-      "notes": "Hatchback low-poly estilizado. Ver notas de kaykit_city_car_taxi."
+      "notes": "Hatchback low-poly. formats_wanted=[] — ver nota do taxi."
     },
     {
       "id": "kaykit_city_car_police",
@@ -93,7 +93,7 @@
       "commercial_use": true,
       "redistribution_allowed": true,
       "attribution": "Não exigida (CC0). Crédito voluntário: Kay Lousberg / KayKit.",
-      "formats_wanted": ["glb"],
+      "formats_wanted": [],
       "selector": [],
       "rigged": false,
       "animated": false,
@@ -101,7 +101,7 @@
       "github_commit": "63976910ca04d16f0fc531b9c614244be8128713",
       "github_files": ["car_police.glb"],
       "download_status": "pending",
-      "notes": "Carro de polícia low-poly estilizado. Ver notas de kaykit_city_car_taxi."
+      "notes": "Carro de polícia low-poly. formats_wanted=[] — ver nota do taxi."
     },
     {
       "id": "kaykit_city_car_stationwagon",
@@ -118,7 +118,7 @@
       "commercial_use": true,
       "redistribution_allowed": true,
       "attribution": "Não exigida (CC0). Crédito voluntário: Kay Lousberg / KayKit.",
-      "formats_wanted": ["glb"],
+      "formats_wanted": [],
       "selector": [],
       "rigged": false,
       "animated": false,
@@ -126,7 +126,7 @@
       "github_commit": "63976910ca04d16f0fc531b9c614244be8128713",
       "github_files": ["car_stationwagon.glb"],
       "download_status": "pending",
-      "notes": "Station wagon low-poly estilizado. Ver notas de kaykit_city_car_taxi."
+      "notes": "Station wagon low-poly. formats_wanted=[] — ver nota do taxi."
     },
     {
       "id": "polyhaven_covered_car",
@@ -148,7 +148,7 @@
       "rigged": false,
       "animated": false,
       "download_status": "pending",
-      "notes": "Carro sob uma cobertura de tecido — recurso secundário (não é veículo conduzível). Selector ['1k','gltf'] ainda NÃO confirmado contra /files/covered_car: correr primeiro 'scan' com asset_id=polyhaven_covered_car antes do download."
+      "notes": "Carro sob cobertura de tecido — recurso secundário. Correr 'scan' com asset_id=polyhaven_covered_car antes do download para confirmar candidatos."
     }
   ]
 }
