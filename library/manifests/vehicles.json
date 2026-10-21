@@ -2,5 +2,28 @@
   "schema_version": 1,
   "category": "vehicles",
   "description": "Veículos. Candidatos (Kenney, Quaternius, Poly Haven) por identificar e verificar.",
-  "assets": []
+  "assets": [
+    {
+      "id": "polyhaven_covered_car",
+      "name": "Covered Car",
+      "subcategory": "cars",
+      "source": "polyhaven",
+      "source_asset_id": "covered_car",
+      "source_url": "https://polyhaven.com/a/covered_car",
+      "author": "MP",
+      "license": "CC0-1.0",
+      "license_verified": true,
+      "license_evidence_url": "https://polyhaven.com/a/covered_car",
+      "license_verified_on": "2026-10-21",
+      "commercial_use": true,
+      "redistribution_allowed": true,
+      "attribution": "Não exigida (CC0). Crédito opcional a Poly Haven / MP.",
+      "formats_wanted": ["gltf"],
+      "selector": ["1k", "gltf"],
+      "rigged": false,
+      "animated": false,
+      "download_status": "pending",
+      "notes": "Carro sob uma cobertura de tecido (categoria Poly Haven: Vehicles & Transport/Road Vehicles/Cars), ~12.6k tris, texturas até 8K (usa-se 1k). Única entrada de carro na categoria vehicles-transport da API em 2026-10-21. Selector ['1k','gltf'] ainda NÃO confirmado contra /files/covered_car: correr primeiro 'scan' com asset_id=polyhaven_covered_car e confirmar candidatos/dependências antes do download. Não tem interior nem rodas animadas."
+    }
+  ]
 }
