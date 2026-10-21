@@ -1,7 +1,7 @@
 {
   "schema_version": 1,
   "category": "environments",
-  "description": "Cenários e ambientes. KayKit City Builder Bits (CC0) fornece componentes modulares para cenários urbanos.",
+  "description": "Cenários e ambientes. KayKit City Builder Bits (CC0) fornece componentes modulares para cenários urbanos. Nomes de ficheiro a confirmar no SCAN antes de activar downloads.",
   "assets": [
     {
       "id": "kaykit_city_road_straight",
@@ -18,7 +18,7 @@
       "commercial_use": true,
       "redistribution_allowed": true,
       "attribution": "Não exigida (CC0). Crédito voluntário: Kay Lousberg / KayKit.",
-      "formats_wanted": ["glb"],
+      "formats_wanted": [],
       "selector": [],
       "rigged": false,
       "animated": false,
@@ -26,7 +26,7 @@
       "github_commit": "63976910ca04d16f0fc531b9c614244be8128713",
       "github_files": ["road_straight.glb"],
       "download_status": "pending",
-      "notes": "Componente modular de estrada. O pack City Builder tem >32 modelos low-poly para cenários urbanos. Confirmar nomes de ficheiro exactos no SCAN antes de adicionar mais componentes. O commit 63976910 é imutável."
+      "notes": "ATENÇÃO: nome 'road_straight.glb' é estimativa. Confirmar no SCAN (correr com asset_id=kaykit_city_road_straight e operation=scan) os nomes exactos dos ficheiros antes do primeiro download. formats_wanted=[] porque o resolver github_zip devolve directamente o ZIP."
     },
     {
       "id": "kaykit_city_building_large",
@@ -43,7 +43,7 @@
       "commercial_use": true,
       "redistribution_allowed": true,
       "attribution": "Não exigida (CC0). Crédito voluntário: Kay Lousberg / KayKit.",
-      "formats_wanted": ["glb"],
+      "formats_wanted": [],
       "selector": [],
       "rigged": false,
       "animated": false,
@@ -51,7 +51,7 @@
       "github_commit": "63976910ca04d16f0fc531b9c614244be8128713",
       "github_files": ["building_large.glb"],
       "download_status": "pending",
-      "notes": "ATENÇÃO: nome de ficheiro 'building_large.glb' é uma estimativa baseada nas convenções do pack. Verificar no SCAN o nome real antes do download. Ver notas de kaykit_city_road_straight."
+      "notes": "ATENÇÃO: nome 'building_large.glb' é estimativa — confirmar no SCAN. Ver nota de kaykit_city_road_straight."
     }
   ]
 }
