@@ -41,6 +41,22 @@
       "status": "api_file_schema_unverified",
       "notes": "API v3 documentada (parâmetros id, type, include=downloads). Esquema de 'downloads' e host/CDN de download por confirmar no SCAN. A API v2 já não recebe atualizações."
     },
+    "kaykit": {
+      "name": "KayKit / Kay Lousberg",
+      "homepage": "https://kaylousberg.itch.io",
+      "kind": "github_zip",
+      "resolver": "github_zip",
+      "content_license": "CC0-1.0",
+      "content_license_verified": true,
+      "license_evidence_url": "https://creativecommons.org/publicdomain/zero/1.0/",
+      "license_verified_on": "2026-10-21",
+      "license_evidence_notes": "Licença CC0 confirmada em dois repositórios: LICENSE.txt no commit 672074b do pack Adventures (lido por terceiro em gitdab.com/andodeki/makepad) e LICENSE incluído no commit 63976910 do pack City Builder Bits (lido em github.com/Netclicks/PointB que cita o ficheiro). Confirmado também na Godot Asset Library (CC0) e itch.io (CC0 Licensed).",
+      "allowed_download_hosts": ["codeload.github.com"],
+      "allowed_download_hosts_verified_on": "2026-10-21",
+      "allowed_download_hosts_evidence": "codeload.github.com é o host oficial do GitHub para download de ZIPs de commits (https://codeload.github.com/<owner>/<repo>/zip/<sha>). Verificado empiricamente e documentado na API do GitHub.",
+      "status": "download_host_confirmed",
+      "notes": "Pacotes distribuídos via GitHub. O resolver github_zip descarrega o ZIP do commit fixo (SHA completo) e extrai apenas os ficheiros listados em github_files. O ZIP gerado pelo GitHub para um commit SHA é imutável."
+    },
     "kenney": {
       "name": "Kenney",
       "homepage": "https://kenney.nl/assets",
@@ -52,7 +68,7 @@
       "license_verified_on": null,
       "allowed_download_hosts": [],
       "status": "no_documented_download_api",
-      "notes": "A página de suporte indica CC0 para os pacotes, mas a licença de cada pacote tem de ser confirmada no ficheiro de licença incluído. Sem API de download documentada."
+      "notes": "A página de suporte indica CC0 para os pacotes, mas a licença de cada pacote tem de ser confirmada no ficheiro de licença incluído. Sem API de download documentada. BLOQUEADO até confirmar: (1) se o repositório KenneyNL/Starter-Kit-Racing é o canal oficial de distribuição ou apenas uma demo; (2) se a licença MIT do código se aplica também aos modelos (o prompt alerta para esta separação)."
     },
     "quaternius": {
       "name": "Quaternius",
@@ -65,20 +81,22 @@
       "license_verified_on": null,
       "allowed_download_hosts": [],
       "status": "per_pack_license_check_required",
-      "notes": "Páginas de pacotes indicam CC0, mas há relatos secundários de licença diferente em alguns pacotes: verificar pacote a pacote. Sem URL de download direto documentada (distribuição via itch.io/site)."
+      "notes": "Páginas de pacotes indicam CC0, mas há relatos secundários de licença diferente em alguns pacotes (possível QAL v1.0 desde 28/08/2026 com restrições de redistribuição). BLOQUEADO até verificar a licença aplicável a cada pacote específico."
     },
     "makehuman": {
       "name": "MakeHuman Community",
       "homepage": "https://www.makehumancommunity.org/",
-      "kind": "manual",
-      "resolver": "manual_pending",
+      "kind": "zip_url",
+      "resolver": "zip_url",
       "content_license": "CC0-1.0",
       "content_license_verified": false,
       "license_evidence_url": "https://static.makehumancommunity.org/assets/assetpacks/index.html",
       "license_verified_on": null,
-      "allowed_download_hosts": [],
-      "status": "per_asset_license_check_required",
-      "notes": "Pacotes de assets listados como CC0 ou CC-BY conforme o pacote (ex.: alguns materiais de olhos são CC-BY). Verificar licença por pacote/asset; CC-BY fica registado à parte, sem download automático."
+      "allowed_download_hosts": ["files.makehumancommunity.org"],
+      "allowed_download_hosts_verified_on": "2026-10-21",
+      "allowed_download_hosts_evidence": "URL confirmada empiricamente pelo Claude anterior: https://files.makehumancommunity.org/asset_packs/shirts01/shirts01_cc0.zip. O host files.makehumancommunity.org é o servidor oficial de assets do MakeHuman Community.",
+      "status": "license_per_asset_unverified",
+      "notes": "Pacotes de assets listados como CC0 ou CC-BY conforme o pacote. O resolver zip_url descarrega ZIPs directamente de files.makehumancommunity.org. ATENÇÃO: content_license_verified=false porque a licença tem de ser verificada por pacote — alguns materiais são CC-BY. Só adicionar entradas após confirmar CC0 individualmente."
     },
     "khronos_gltf_samples": {
       "name": "Khronos glTF Sample Models",
