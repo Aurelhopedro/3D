@@ -26,7 +26,7 @@ import urllib.error
 import urllib.parse
 import urllib.request
 import zipfile
-from typing import Any, Callable, Dict, List, Optional
+from typing import Any, Callable, Dict, List, Optional, Set
 
 sys.path.insert(0, str(pathlib.Path(__file__).resolve().parent))
 import common  # noqa: E402
@@ -181,11 +181,7 @@ def http_incomplete():
 # Candidatos de download (percorrimento genérico de JSON)
 # --------------------------------------------------------------------------
 def collect_candidates(node: Any, keypath: tuple = ()) -> List[Dict[str, Any]]:
-    """Encontra dicts com um URL http(s) em qualquer profundidade.
-
-    Não assume o esquema exato de cada API: devolve o que existir, com o
-    caminho de chaves, tamanho e md5 quando presentes.
-    """
+    """Encontra dicts com um URL http(s) em qualquer profundidade."""
     out: List[Dict[str, Any]] = []
     if isinstance(node, dict):
         url = None
@@ -222,7 +218,6 @@ def collect_candidates(node: Any, keypath: tuple = ()) -> List[Dict[str, Any]]:
 
 
 def candidate_rel_path(c: Dict[str, Any]) -> str:
-    # 1. nome explícito tem prioridade máxima (vem de include da Poly Haven ou campos name/fileName)
     if c.get("name"):
         try:
             return str(safe_relative_path(c["name"]))
@@ -258,73 +253,86 @@ def select_candidates(cands: List[Dict[str, Any]], formats_wanted: List[str],
 # Resolvers (um por fonte)
 # --------------------------------------------------------------------------
 
-def _polyhaven_expand_includes(selected_entries: Any) -> List[Dict[str, Any]]:
-    """Para cada entrada selecionada com chave 'include', expande as dependências.
+def _find_parent_dicts_of_urls(node: Any, target_urls: Set[str]) -> List[Any]:
+    """Encontra os dicts da API que contêm diretamente um dos URLs alvo.
 
-    A API Poly Haven tem esta estrutura para modelos glTF:
+    A API Poly Haven tem a estrutura:
+        {"url": "model_1k.gltf", "size": ..., "md5": ..., "include": {...}}
+
+    Esta função encontra esses dicts (os que têm a chave "url" com o valor
+    que foi selecionado), para que possamos extrair o "include" apenas deles.
+    """
+    found: List[Any] = []
+    if isinstance(node, dict):
+        for k in URL_KEYS:
+            v = node.get(k)
+            if isinstance(v, str) and v in target_urls:
+                found.append(node)
+                return found  # este nodo já foi encontrado; não precisamos de descer
+        for v in node.values():
+            found.extend(_find_parent_dicts_of_urls(v, target_urls))
+    elif isinstance(node, list):
+        for item in node:
+            found.extend(_find_parent_dicts_of_urls(item, target_urls))
+    return found
+
+
+def _polyhaven_expand_includes(entry_dicts: List[Any]) -> List[Dict[str, Any]]:
+    """Extrai dependências da chave 'include' de uma lista de dicts da API Poly Haven.
+
+    Recebe apenas os dicts dos ficheiros selecionados (ex: o nodo gltf/1k/gltf),
+    não o nodo completo da API. Isso garante que só as dependências da variante
+    selecionada são incluídas.
+
+    A API Poly Haven declara dependências assim:
         {
           "url": "model_1k.gltf",
-          "size": ...,
-          "md5": ...,
           "include": {
-            "textures/diffuse_1k.jpg": {"url": ..., "size": ..., "md5": ...},
-            "model.bin": {"url": ..., "size": ..., "md5": ...}
+            "model.bin": {"url": ..., "size": ..., "md5": ...},
+            "textures/diff_1k.jpg": {"url": ..., "size": ..., "md5": ...}
           }
         }
 
-    As dependências em "include" são obrigatórias para que o modelo funcione:
-    o ficheiro .gltf referencia-as por caminho relativo.
-    Esta função extrai essas dependências como candidatos adicionais,
-    preservando o caminho relativo (chave do dict include) como 'name'.
-
     Segurança:
-    - Apenas URLs HTTPS são aceites (verificação posterior por check_url).
     - Caminhos com traversal (../) são rejeitados por safe_relative_path.
-    - Não se aceitam referências a hosts arbitrários (verificação posterior).
+    - URLs de hosts arbitrários são verificados depois por check_url.
     """
     extras: List[Dict[str, Any]] = []
     seen_urls: set = set()
 
-    def _walk(node: Any) -> None:
-        if not isinstance(node, dict):
-            return
-        inc = node.get("include")
-        if isinstance(inc, dict):
-            for rel_path, info in inc.items():
-                if not isinstance(info, dict):
-                    continue
-                url = None
-                for k in URL_KEYS:
-                    v = info.get(k)
-                    if isinstance(v, str) and v.startswith(("http://", "https://")):
-                        url = v
-                        break
-                if not url or url in seen_urls:
-                    continue
-                # Valida o caminho relativo antes de aceitar
-                try:
-                    safe_relative_path(rel_path)
-                except UnsafePathError:
-                    continue
-                seen_urls.add(url)
-                size = info.get("size")
-                md5 = info.get("md5")
-                extras.append({
-                    "url": url,
-                    "keypath": ["include", rel_path],
-                    "size": size if isinstance(size, int) and not isinstance(size, bool) else None,
-                    "md5": md5.lower() if isinstance(md5, str) and len(md5) == 32 else None,
-                    "name": rel_path,  # preserva o caminho relativo declarado pela API
-                    "is_dependency": True,
-                })
-        for v in node.values():
-            if isinstance(v, dict):
-                _walk(v)
-            elif isinstance(v, list):
-                for item in v:
-                    _walk(item)
+    for entry_dict in entry_dicts:
+        if not isinstance(entry_dict, dict):
+            continue
+        inc = entry_dict.get("include")
+        if not isinstance(inc, dict):
+            continue
+        for rel_path, info in inc.items():
+            if not isinstance(info, dict):
+                continue
+            url = None
+            for k in URL_KEYS:
+                v = info.get(k)
+                if isinstance(v, str) and v.startswith(("http://", "https://")):
+                    url = v
+                    break
+            if not url or url in seen_urls:
+                continue
+            try:
+                safe_relative_path(rel_path)
+            except UnsafePathError:
+                continue
+            seen_urls.add(url)
+            size = info.get("size")
+            md5 = info.get("md5")
+            extras.append({
+                "url": url,
+                "keypath": ["include", rel_path],
+                "size": size if isinstance(size, int) and not isinstance(size, bool) else None,
+                "md5": md5.lower() if isinstance(md5, str) and len(md5) == 32 else None,
+                "name": rel_path,
+                "is_dependency": True,
+            })
 
-    _walk(selected_entries)
     return extras
 
 
@@ -332,20 +340,16 @@ def resolve_polyhaven(src: Dict[str, Any], entry: Dict[str, Any], fetch: Callabl
     """Resolve candidatos da Poly Haven, incluindo dependências glTF (bin/texturas).
 
     Fluxo:
-    1. Obtém a resposta da API para o recurso.
+    1. Obtém a resposta da API.
     2. Filtra pelo formato pretendido (ex: 'gltf').
-    3. Aplica select_candidates para encontrar o ficheiro principal.
-    4. Para cada ficheiro principal selecionado, extrai as dependências
-       declaradas na chave 'include' da API, com os caminhos relativos corretos.
-    5. Devolve a lista combinada: [principal, dep1, dep2, ...].
-
-    As dependências são marcadas com is_dependency=True e têm o campo 'name'
-    preenchido com o caminho relativo declarado pela API (ex: 'textures/diff.jpg').
+    3. Seleciona o ficheiro principal com select_candidates.
+    4. Encontra os dicts da API que contêm os URLs selecionados.
+    5. Extrai as dependências ('include') APENAS desses dicts.
+    6. Devolve [principal, dep1, dep2, ...].
     """
     api = src["api_base"].rstrip("/")
     data = fetch(f"{api}/files/{urllib.parse.quote(entry['source_asset_id'])}")
 
-    # Filtra pelo formato pretendido
     wanted = [w.lower() for w in (entry.get("formats_wanted") or [])]
     if wanted and isinstance(data, dict):
         node = {k: v for k, v in data.items() if k.lower() in wanted}
@@ -354,28 +358,22 @@ def resolve_polyhaven(src: Dict[str, Any], entry: Dict[str, Any], fetch: Callabl
     else:
         node = data
 
-    # Encontra todos os candidatos do nodo filtrado
     all_cands = collect_candidates(node)
-
-    # Aplica o selector para encontrar o(s) ficheiro(s) principal(is)
     selector = entry.get("selector") or []
     formats_wanted = entry.get("formats_wanted") or []
     principal = select_candidates(all_cands, formats_wanted, selector)
 
     if not principal:
-        # Sem seleção: devolve todos os candidatos para que process_asset
-        # reporte no_candidates_selected com informação de diagnóstico
         return all_cands
 
-    # Para cada ficheiro principal selecionado, extrai as dependências da
-    # sub-chave "include" correspondente na estrutura da API.
-    # Percorre o nodo filtrado para encontrar os blocos que contêm esses URLs.
-    dep_cands = _polyhaven_expand_includes(node)
+    # Encontra na estrutura da API os dicts que contêm os URLs selecionados,
+    # para extrair o "include" apenas desses dicts (não de toda a API).
+    selected_urls = {c["url"] for c in principal}
+    parent_dicts = _find_parent_dicts_of_urls(node, selected_urls)
+    dep_cands = _polyhaven_expand_includes(parent_dicts)
 
-    # Remove duplicados: se uma dependência já estiver nos candidatos principais,
-    # não a adiciona novamente.
-    principal_urls = {c["url"] for c in principal}
-    dep_cands = [c for c in dep_cands if c["url"] not in principal_urls]
+    # Remove duplicados com o principal
+    dep_cands = [c for c in dep_cands if c["url"] not in selected_urls]
 
     return principal + dep_cands
 
@@ -410,7 +408,6 @@ def extract_zip(zpath: pathlib.Path, dest: pathlib.Path, max_uncompressed: int) 
         infos = zf.infolist()
         if len(infos) > MAX_ZIP_ENTRIES:
             raise Blocked("blocked_zip_too_many_entries", str(len(infos)))
-        # 1.ª passagem: validar TODAS as entradas antes de escrever qualquer coisa
         total_declared = 0
         for info in infos:
             try:
@@ -423,7 +420,6 @@ def extract_zip(zpath: pathlib.Path, dest: pathlib.Path, max_uncompressed: int) 
             total_declared += info.file_size
         if total_declared > max_uncompressed:
             raise Blocked("blocked_zip_too_large", f"{total_declared} bytes")
-        # 2.ª passagem: extrair (limitando bytes realmente escritos)
         written_total = 0
         for info in infos:
             if info.is_dir():
@@ -520,7 +516,6 @@ def _locally_modified(adir: pathlib.Path, meta: Dict[str, Any]) -> bool:
 
 
 def _source_files_changed(meta: Dict[str, Any], cands: List[Dict[str, Any]]) -> Optional[bool]:
-    """True/False se for possível comparar por md5/tamanho; None se inconclusivo."""
     old = {(f.get("md5"), f.get("size")) for f in meta.get("source_files", [])}
     new = {(c.get("md5"), c.get("size")) for c in cands}
     if all(m is None and s is None for m, s in old | new):
@@ -562,14 +557,9 @@ def process_asset(ctx: Context, entry: Dict[str, Any], asset_id_filter: Optional
         cands = resolver(src, entry, lambda u: ctx.fetch_json(u, api_hosts))
     except Blocked as exc:
         return _result(entry, exc.code, detail=exc.detail)
-    except Exception as exc:  # noqa: BLE001 - reportado, não fatal
+    except Exception as exc:  # noqa: BLE001
         return _result(entry, "failed_resolve", error=str(exc)[:300])
 
-    # Para o scan e para relatórios, mostramos todos os candidatos.
-    # Para o download, separamos os candidatos principais dos de dependência.
-    # Os candidatos de dependência (is_dependency=True) são sempre incluídos
-    # quando o ficheiro principal é selecionado; não passam pelo selector
-    # porque não têm "gltf"/"1k" nos seus keypaths.
     principal_cands = [c for c in cands if not c.get("is_dependency")]
     dep_cands = [c for c in cands if c.get("is_dependency")]
 
@@ -577,16 +567,12 @@ def process_asset(ctx: Context, entry: Dict[str, Any], asset_id_filter: Optional
         principal_cands, entry.get("formats_wanted") or [], entry.get("selector") or []
     )
 
-    # Se há dependências (is_dependency), inclui-as junto com os selecionados principais.
-    # A seleção de dependências não usa o selector: são obrigatórias para o modelo funcionar.
     if selected_principal:
         selected = selected_principal + dep_cands
     else:
         selected = []
 
-    # Para scan: mostra todos os candidatos (principal + dependências) sem filtrar
     all_for_report = cands
-
     allowed_hosts = list(src.get("allowed_download_hosts", []))
     hosts_seen = sorted({(urllib.parse.urlparse(c["url"]).hostname or "").lower() for c in all_for_report})
     hosts_unconfirmed = [h for h in hosts_seen
@@ -727,7 +713,6 @@ def _download_asset(ctx: Context, entry: Dict[str, Any], src: Dict[str, Any],
         save_json(asset_stage / "metadata.json", metadata)
         (asset_stage / "LICENSE.txt").write_text(license_notice(entry, now), encoding="utf-8")
 
-        # Substituição: só apagamos uma pasta nossa (dentro de assets/<cat>/ e com metadata.json)
         adir.parent.mkdir(parents=True, exist_ok=True)
         if adir.exists():
             old_meta = read_asset_metadata(adir)
@@ -831,7 +816,7 @@ def main(argv: Optional[List[str]] = None) -> int:
             fh.write(md)
     failed = [r for r in report["results"] if str(r["status"]).startswith("failed_")]
     if args.mode == "scan":
-        return 0  # o SCAN existe para descobrir: falhas ficam no relatório, sem falhar a execução
+        return 0
     return 1 if failed else 0
 
 
