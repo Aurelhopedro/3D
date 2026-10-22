@@ -8,6 +8,7 @@ as APIs externas (Poly Haven, ambientCG, GitHub, MakeHuman) funcionam: isso só 
 com um SCAN real no GitHub Actions.
 """
 import copy
+import hashlib
 import http.server
 import io
 import json
@@ -74,11 +75,11 @@ ROUTES = {
     "/missing_dep.gltf": b'{"asset":{"version":"2.0"},"buffers":[{"uri":"missing.bin","byteLength":10}]}',
     "/size_model.gltf": b'{"asset":{"version":"2.0"},"buffers":[{"uri":"model.bin","byteLength":20}]}',
     "/size_model.bin": b"B" * 20,
-    # ZIP GitHub simulado — Knight.glb + Mage.glb (LICENSE.txt é filtrado por github_files)
+    # ZIP GitHub simulado — Knight.glb + Mage.glb (LICENSE.txt do ZIP é filtrado por github_files)
     "/github_knight.zip": make_github_zip(
         "KayKit-Character-Pack-Adventures-1.0",
         "672074b",
-        [("Knight.glb", GLB_A), ("Mage.glb", GLB_B), ("LICENSE.txt", b"CC0")]
+        [("Knight.glb", GLB_A), ("Mage.glb", GLB_B), ("LICENSE.txt", b"CC0 DO ZIP")]
     ),
     # ZIP GitHub simulado — múltiplos carros City Builder
     "/github_multi.zip": make_github_zip(
@@ -91,12 +92,19 @@ ROUTES = {
             ("LICENSE.txt", b"CC0"),
         ]
     ),
-    # ZIP MakeHuman simulado — .mhclo não está em ALLOWED_EXTENSIONS → ignorado
+    # ZIP MakeHuman simulado — .mhclo não está em ALLOWED_EXTENSIONS → ignorado;
+    # LICENSE.txt na raiz é nome reservado → ignorado (o gestor gera o seu)
     "/makehuman_shirts.zip": make_zip([
         ("shirts01/shirt_plain.mhclo", b"mhclo content"),
         ("shirts01/shirt_plain.obj", b"v 0 0 0\n"),
         ("shirts01/shirt_plain.png", b"\x89PNG" + b"S" * 30),
-        ("LICENSE.txt", b"CC0"),
+        ("LICENSE.txt", b"CC0 DO ZIP"),
+    ]),
+    # ZIP malicioso: tenta fornecer metadata.json e LICENSE.txt falsos na raiz
+    "/spoof_reserved.zip": make_zip([
+        ("metadata.json", b'{"id":"spoof","download_status":"downloaded"}'),
+        ("LICENSE.txt", b"licenca falsa"),
+        ("model.glb", GLB_B),
     ]),
 }
 
@@ -463,11 +471,8 @@ class TestGithubZipResolver(unittest.TestCase):
                 github_commit="672074b73ba276876a19e8816ecdc5241817ab47",
                 github_files=["Knight.glb"],
             )
-            # Knight.glb pedido → extraído
             self.assertTrue((dest / "Knight.glb").exists())
-            # Mage.glb não pedido → ignorado
             self.assertFalse((dest / "Mage.glb").exists())
-            # LICENSE.txt também não está em github_files → ignorado (correcto)
             self.assertFalse((dest / "LICENSE.txt").exists())
             self.assertIn("Knight.glb", result["extracted"])
         finally:
@@ -491,8 +496,36 @@ class TestGithubZipResolver(unittest.TestCase):
                            github_files=[])
             self.assertTrue((dest / "ModelA.glb").exists())
             self.assertTrue((dest / "ModelB.glb").exists())
-            # .py não está em ALLOWED_EXTENSIONS → ignorado
             self.assertFalse((dest / "script.py").exists())
+        finally:
+            zpath.unlink(missing_ok=True)
+            shutil.rmtree(dest, ignore_errors=True)
+
+    def test_extract_zip_skips_reserved_root_names(self):
+        """metadata.json e LICENSE.txt na raiz do ZIP pertencem ao gestor e são ignorados."""
+        zpath = pathlib.Path(tempfile.mktemp(suffix=".zip"))
+        dest = pathlib.Path(tempfile.mkdtemp())
+        try:
+            zpath.write_bytes(ROUTES["/spoof_reserved.zip"])
+            result = dl.extract_zip(zpath, dest, max_uncompressed=10 * 1024 * 1024)
+            self.assertTrue((dest / "model.glb").exists())
+            self.assertFalse((dest / "metadata.json").exists())
+            self.assertFalse((dest / "LICENSE.txt").exists())
+            self.assertEqual(result["extracted"], ["model.glb"])
+        finally:
+            zpath.unlink(missing_ok=True)
+            shutil.rmtree(dest, ignore_errors=True)
+
+    def test_extract_zip_allows_reserved_names_in_subdirs(self):
+        """O bloqueio aplica-se só à raiz; 'sub/LICENSE.txt' é um ficheiro normal."""
+        zip_bytes = make_zip([("pack/LICENSE.txt", b"CC0 do pack"), ("pack/model.glb", GLB_A)])
+        zpath = pathlib.Path(tempfile.mktemp(suffix=".zip"))
+        dest = pathlib.Path(tempfile.mkdtemp())
+        try:
+            zpath.write_bytes(zip_bytes)
+            dl.extract_zip(zpath, dest, max_uncompressed=10 * 1024 * 1024)
+            self.assertTrue((dest / "pack" / "LICENSE.txt").exists())
+            self.assertTrue((dest / "pack" / "model.glb").exists())
         finally:
             zpath.unlink(missing_ok=True)
             shutil.rmtree(dest, ignore_errors=True)
@@ -541,9 +574,7 @@ class TestZipUrlResolver(unittest.TestCase):
             "zip_url": "http://127.0.0.1:12345/pack.zip",
             "zip_sha256": None,
         }
-        src = self._src(host="127.0.0.1")
-        # Não deve lançar exceção
-        cands = dl.resolve_zip_url(src, entry, lambda _u: None)
+        cands = dl.resolve_zip_url(self._src(host="127.0.0.1"), entry, lambda _u: None)
         self.assertEqual(len(cands), 1)
         self.assertEqual(cands[0]["url"], entry["zip_url"])
 
@@ -637,17 +668,19 @@ class TestGithubZipDownload(LocalServerTestCase):
             self.assertEqual(rep["results"][0]["status"], "downloaded",
                              f"resultado inesperado: {rep['results'][0]}")
             adir = root / "assets" / "characters" / "kaykit_knight_test"
-            # Knight.glb extraído (está em github_files)
+            # Knight.glb extraído (está em github_files); Mage.glb não (não pedido)
             self.assertTrue((adir / "Knight.glb").exists())
-            # Mage.glb não extraído (não está em github_files)
             self.assertFalse((adir / "Mage.glb").exists())
-            # LICENSE.txt não extraído (não está em github_files)
-            self.assertFalse((adir / "LICENSE.txt").exists())
+            # LICENSE.txt existe SEMPRE e é o aviso gerado pelo gestor, não o do ZIP
+            lic = (adir / "LICENSE.txt").read_text(encoding="utf-8")
+            self.assertIn("Licença: CC0-1.0", lic)
+            self.assertNotIn("CC0 DO ZIP", lic)
             # metadata.json tem proveniência correcta
             meta = json.loads((adir / "metadata.json").read_text())
             self.assertEqual(meta["github_commit"], "672074b73ba276876a19e8816ecdc5241817ab47")
             self.assertEqual(meta["github_repo"],
                              "KayKit-Game-Assets/KayKit-Character-Pack-Adventures-1.0")
+            self.assertEqual([f["path"] for f in meta["files"]], ["Knight.glb"])
             # Validação de integridade passa
             self.assertEqual(validate_assets.run(root)["failed"], 0)
         finally:
@@ -655,7 +688,7 @@ class TestGithubZipDownload(LocalServerTestCase):
             dl.RESOLVERS.update(orig)
 
     def test_no_matching_files_fails(self):
-        """Quando nenhum ficheiro do ZIP corresponde a github_files → failed."""
+        """Quando nenhum ficheiro do ZIP corresponde a github_files → não descarrega."""
         orig = dict(dl.RESOLVERS)
         dl.RESOLVERS["github_zip"] = self._patched_resolver("/github_knight.zip")
         try:
@@ -675,12 +708,12 @@ class TestGithubZipDownload(LocalServerTestCase):
     def test_branch_name_as_commit_blocked(self):
         """Commit 'main' (não SHA de 40 hex) é bloqueado pelo resolver."""
         orig = dict(dl.RESOLVERS)
-        dl.RESOLVERS["github_zip"] = dl.resolve_github_zip  # sem patch de URL
+        dl.RESOLVERS["github_zip"] = dl.resolve_github_zip
         try:
             entry = self._entry(
                 "bad_commit_test",
                 "KayKit-Game-Assets/KayKit-Character-Pack-Adventures-1.0",
-                "main",  # branch name → deve bloquear
+                "main",
                 ["Knight.glb"],
             )
             root = self._make_root({"characters": [entry]})
@@ -699,7 +732,7 @@ class TestGithubZipDownload(LocalServerTestCase):
             entry = self._entry(
                 "short_sha_test",
                 "KayKit-Game-Assets/KayKit-Character-Pack-Adventures-1.0",
-                "672074b",  # 7 hex → deve bloquear
+                "672074b",
                 ["Knight.glb"],
             )
             root = self._make_root({"characters": [entry]})
@@ -746,7 +779,6 @@ class TestZipUrlDownload(LocalServerTestCase):
             "license_verified_on": "2026-10-21",
             "commercial_use": True, "redistribution_allowed": True, "attribution": "n/a",
             "formats_wanted": [], "selector": [], "rigged": False, "animated": False,
-            # URL local directamente — resolve_zip_url aceita http://127.0.0.1 com LIB_TEST_ALLOW_LOCAL=1
             "zip_url": self.url(zip_local_path),
             "zip_sha256": sha256,
             "download_status": "pending",
@@ -766,15 +798,31 @@ class TestZipUrlDownload(LocalServerTestCase):
                          f"resultado inesperado: {rep['results'][0]}")
         adir = root / "assets" / "clothing" / "mh_shirts_test"
         all_files = list(adir.rglob("*"))
-        # .obj ou .png devem existir
-        has_obj = any(f.suffix == ".obj" for f in all_files)
-        has_png = any(f.suffix == ".png" for f in all_files)
-        self.assertTrue(has_obj or has_png,
-                        f"esperava .obj ou .png em {[f.name for f in all_files]}")
-        # .mhclo não deve existir (não está em ALLOWED_EXTENSIONS)
-        has_mhclo = any(f.suffix == ".mhclo" for f in all_files)
-        self.assertFalse(has_mhclo, ".mhclo não devia ter sido extraído")
-        # Validação de integridade passa
+        self.assertTrue(any(f.suffix == ".obj" for f in all_files))
+        self.assertTrue(any(f.suffix == ".png" for f in all_files))
+        self.assertFalse(any(f.suffix == ".mhclo" for f in all_files),
+                         ".mhclo não devia ter sido extraído")
+        # LICENSE.txt é o aviso gerado, não o do ZIP
+        lic = (adir / "LICENSE.txt").read_text(encoding="utf-8")
+        self.assertIn("Licença: CC0-1.0", lic)
+        self.assertNotIn("CC0 DO ZIP", lic)
+        # Validação de integridade passa (regressão do bug sha256 do LICENSE.txt)
+        val = validate_assets.run(root)
+        self.assertEqual(val["failed"], 0, f"problemas: {val['results']}")
+
+    def test_spoofed_reserved_files_do_not_override_manager_metadata(self):
+        """ZIP com metadata.json/LICENSE.txt falsos na raiz não consegue forjar metadados."""
+        entry = self._entry("mh_spoof_test", "/spoof_reserved.zip")
+        root = self._make_root({"clothing": [entry]})
+        rep = dl.run(root, "download")
+        self.assertEqual(rep["results"][0]["status"], "downloaded",
+                         f"resultado inesperado: {rep['results'][0]}")
+        adir = root / "assets" / "clothing" / "mh_spoof_test"
+        meta = json.loads((adir / "metadata.json").read_text(encoding="utf-8"))
+        self.assertEqual(meta["id"], "mh_spoof_test")  # não "spoof"
+        self.assertEqual([f["path"] for f in meta["files"]], ["model.glb"])
+        lic = (adir / "LICENSE.txt").read_text(encoding="utf-8")
+        self.assertNotIn("licenca falsa", lic)
         self.assertEqual(validate_assets.run(root)["failed"], 0)
 
     def test_sha256_mismatch_blocked(self):
@@ -788,9 +836,7 @@ class TestZipUrlDownload(LocalServerTestCase):
 
     def test_correct_sha256_accepted(self):
         """SHA-256 correcto não bloqueia o download."""
-        import hashlib
-        data = ROUTES["/makehuman_shirts.zip"]
-        correct_sha = hashlib.sha256(data).hexdigest()
+        correct_sha = hashlib.sha256(ROUTES["/makehuman_shirts.zip"]).hexdigest()
         entry = self._entry("mh_sha_ok", "/makehuman_shirts.zip", sha256=correct_sha)
         root = self._make_root({"clothing": [entry]})
         rep = dl.run(root, "download")
@@ -886,14 +932,12 @@ class TestNewManifestEntries(unittest.TestCase):
                     self.assertNotEqual(asset.get("download_status"), "pending")
                     self.assertIsNone(asset.get("zip_url"))
 
-    def test_kaykit_github_zip_resolver_selected_in_scan(self):
-        """SCAN de uma entrada KayKit devolve 'scanned' (não blocked nem failed)."""
+    def test_kaykit_github_zip_resolver_builds_candidate(self):
+        """O resolver cria 1 candidato codeload para uma entrada KayKit real."""
         entries = common.load_manifests(REAL_ROOT, "characters")
         knight = next((e for e in entries if e["id"] == "kaykit_adv_knight"), None)
         self.assertIsNotNone(knight)
-        sources = common.load_sources(REAL_ROOT)
-        src = sources.get("kaykit", {})
-        # O resolver deve criar 1 candidato sem lançar excepção
+        src = common.load_sources(REAL_ROOT).get("kaykit", {})
         cands = dl.resolve_github_zip(src, knight, lambda _u: None)
         self.assertEqual(len(cands), 1)
         self.assertIn("codeload.github.com", cands[0]["url"])
