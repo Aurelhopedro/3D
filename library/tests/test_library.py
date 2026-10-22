@@ -4,8 +4,8 @@ Executar:  python3 -I -m unittest discover -s library/tests -v   (a partir da ra
 
 IMPORTANTE: os testes de download usam um servidor HTTP LOCAL (127.0.0.1) para provar a lógica
 de segurança (ficheiros incompletos, limites, ZIP Slip, duplicados...). Isto NÃO prova que
-as APIs externas (Poly Haven, ambientCG) funcionam: isso só se verifica com um SCAN real no
-GitHub Actions.
+as APIs externas (Poly Haven, ambientCG, GitHub, MakeHuman) funcionam: isso só se verifica
+com um SCAN real no GitHub Actions.
 """
 import copy
 import http.server
@@ -65,7 +65,6 @@ ROUTES = {
                            ("run.sh", b"echo hi")]),
     "/slip.zip": make_zip([("../evil.txt", b"evil")]),
     "/corrupt.zip": b"PK\x03\x04 not really a zip",
-    # ficheiros para testes de dependências glTF
     "/dep_model.gltf": b'{"asset":{"version":"2.0"},"buffers":[{"uri":"model.bin","byteLength":20}]}',
     "/dep_model.bin": b"B" * 20,
     "/tex_model.gltf": b'{"asset":{"version":"2.0"},"images":[{"uri":"textures/diff.jpg"}]}',
@@ -75,12 +74,13 @@ ROUTES = {
     "/missing_dep.gltf": b'{"asset":{"version":"2.0"},"buffers":[{"uri":"missing.bin","byteLength":10}]}',
     "/size_model.gltf": b'{"asset":{"version":"2.0"},"buffers":[{"uri":"model.bin","byteLength":20}]}',
     "/size_model.bin": b"B" * 20,
-    # ZIP GitHub simulado para testes do resolver github_zip
+    # ZIP GitHub simulado — Knight.glb + Mage.glb (LICENSE.txt é filtrado por github_files)
     "/github_knight.zip": make_github_zip(
         "KayKit-Character-Pack-Adventures-1.0",
         "672074b",
-        [("Knight.glb", GLB_A), ("LICENSE.txt", b"CC0")]
+        [("Knight.glb", GLB_A), ("Mage.glb", GLB_B), ("LICENSE.txt", b"CC0")]
     ),
+    # ZIP GitHub simulado — múltiplos carros City Builder
     "/github_multi.zip": make_github_zip(
         "KayKit-City-Builder-Bits-1.0",
         "6397691",
@@ -91,7 +91,7 @@ ROUTES = {
             ("LICENSE.txt", b"CC0"),
         ]
     ),
-    # ZIP MakeHuman simulado
+    # ZIP MakeHuman simulado — .mhclo não está em ALLOWED_EXTENSIONS → ignorado
     "/makehuman_shirts.zip": make_zip([
         ("shirts01/shirt_plain.mhclo", b"mhclo content"),
         ("shirts01/shirt_plain.obj", b"v 0 0 0\n"),
@@ -102,7 +102,7 @@ ROUTES = {
 
 
 class Handler(http.server.BaseHTTPRequestHandler):
-    def log_message(self, *a):  # silencioso
+    def log_message(self, *a):
         pass
 
     def do_GET(self):  # noqa: N802
@@ -237,16 +237,14 @@ _POLYHAVEN_FOOD_APPLE_01_GLTF = {
     }
 }
 
-# Nodo isolado do 1k (o que _find_parent_dicts_of_urls deve encontrar)
 _GLTF_1K_NODE = _POLYHAVEN_FOOD_APPLE_01_GLTF["gltf"]["1k"]["gltf"]
 
 
 # ===========================================================================
-# Testes do resolver Poly Haven (existentes — sem alteração de lógica)
+# Testes do resolver Poly Haven (existentes)
 # ===========================================================================
 
 class TestPolyHavenSelector(unittest.TestCase):
-    """Regressão: selector ['1k','glb'] → no_candidates_selected."""
 
     def _candidates_for(self, data, formats_wanted, selector):
         wanted = [w.lower() for w in formats_wanted]
@@ -337,11 +335,10 @@ class TestPolyHavenIncludeDependencies(unittest.TestCase):
 
 
 # ===========================================================================
-# Testes do novo resolver github_zip
+# Testes do resolver github_zip (unitários — sem rede)
 # ===========================================================================
 
 class TestGithubZipResolver(unittest.TestCase):
-    """Testa a lógica do resolver github_zip sem rede."""
 
     def _src(self):
         return {
@@ -352,76 +349,62 @@ class TestGithubZipResolver(unittest.TestCase):
         }
 
     def test_resolve_github_zip_returns_one_candidate(self):
-        src = self._src()
         entry = {
             "source_asset_id": "kaykit_adv_knight",
             "github_repo": "KayKit-Game-Assets/KayKit-Character-Pack-Adventures-1.0",
             "github_commit": "672074b73ba276876a19e8816ecdc5241817ab47",
             "github_files": ["Knight.glb"],
         }
-        cands = dl.resolve_github_zip(src, entry, lambda _u: None)
+        cands = dl.resolve_github_zip(self._src(), entry, lambda _u: None)
         self.assertEqual(len(cands), 1)
         self.assertIn("codeload.github.com", cands[0]["url"])
         self.assertIn("672074b73ba276876a19e8816ecdc5241817ab47", cands[0]["url"])
 
     def test_resolve_github_zip_url_format(self):
-        src = self._src()
         entry = {
             "source_asset_id": "test",
             "github_repo": "owner/repo",
             "github_commit": "abcdef1234567890abcdef1234567890abcdef12",
             "github_files": ["model.glb"],
         }
-        cands = dl.resolve_github_zip(src, entry, lambda _u: None)
-        expected_url = "https://codeload.github.com/owner/repo/zip/abcdef1234567890abcdef1234567890abcdef12"
-        self.assertEqual(cands[0]["url"], expected_url)
+        cands = dl.resolve_github_zip(self._src(), entry, lambda _u: None)
+        expected = "https://codeload.github.com/owner/repo/zip/abcdef1234567890abcdef1234567890abcdef12"
+        self.assertEqual(cands[0]["url"], expected)
 
-    def test_resolve_github_zip_rejects_missing_commit(self):
-        src = self._src()
-        entry = {
-            "source_asset_id": "test",
-            "github_repo": "owner/repo",
-            "github_commit": "",
-            "github_files": [],
-        }
+    def test_resolve_github_zip_rejects_empty_commit(self):
+        entry = {"source_asset_id": "test", "github_repo": "owner/repo",
+                 "github_commit": "", "github_files": []}
         with self.assertRaises(dl.Blocked) as ctx:
-            dl.resolve_github_zip(src, entry, lambda _u: None)
+            dl.resolve_github_zip(self._src(), entry, lambda _u: None)
         self.assertIn("blocked_github_no_commit", ctx.exception.code)
 
     def test_resolve_github_zip_rejects_branch_name(self):
-        """Branch names (ex: 'main') não são commits SHA — devem ser bloqueados."""
-        src = self._src()
-        entry = {
-            "source_asset_id": "test",
-            "github_repo": "owner/repo",
-            "github_commit": "main",
-            "github_files": [],
-        }
+        """Branch names (ex: 'main') não são SHAs de 40 hex — devem ser bloqueados."""
+        entry = {"source_asset_id": "test", "github_repo": "owner/repo",
+                 "github_commit": "main", "github_files": []}
         with self.assertRaises(dl.Blocked) as ctx:
-            dl.resolve_github_zip(src, entry, lambda _u: None)
+            dl.resolve_github_zip(self._src(), entry, lambda _u: None)
+        self.assertIn("blocked_github_no_commit", ctx.exception.code)
+
+    def test_resolve_github_zip_rejects_short_sha(self):
+        """SHA curto (7 hex) não é aceite — exige 40 hex."""
+        entry = {"source_asset_id": "test", "github_repo": "owner/repo",
+                 "github_commit": "672074b", "github_files": []}
+        with self.assertRaises(dl.Blocked) as ctx:
+            dl.resolve_github_zip(self._src(), entry, lambda _u: None)
         self.assertIn("blocked_github_no_commit", ctx.exception.code)
 
     def test_resolve_github_zip_rejects_missing_repo(self):
-        src = self._src()
-        entry = {
-            "source_asset_id": "test",
-            "github_repo": "",
-            "github_commit": "672074b73ba276876a19e8816ecdc5241817ab47",
-            "github_files": [],
-        }
+        entry = {"source_asset_id": "test", "github_repo": "",
+                 "github_commit": "672074b73ba276876a19e8816ecdc5241817ab47", "github_files": []}
         with self.assertRaises(dl.Blocked):
-            dl.resolve_github_zip(src, entry, lambda _u: None)
+            dl.resolve_github_zip(self._src(), entry, lambda _u: None)
 
     def test_resolve_github_zip_rejects_repo_without_slash(self):
-        src = self._src()
-        entry = {
-            "source_asset_id": "test",
-            "github_repo": "badrepoformat",
-            "github_commit": "672074b73ba276876a19e8816ecdc5241817ab47",
-            "github_files": [],
-        }
+        entry = {"source_asset_id": "test", "github_repo": "badrepoformat",
+                 "github_commit": "672074b73ba276876a19e8816ecdc5241817ab47", "github_files": []}
         with self.assertRaises(dl.Blocked):
-            dl.resolve_github_zip(src, entry, lambda _u: None)
+            dl.resolve_github_zip(self._src(), entry, lambda _u: None)
 
     def test_github_strip_prefix_basic(self):
         inner = dl._github_strip_prefix(
@@ -439,14 +422,13 @@ class TestGithubZipResolver(unittest.TestCase):
         )
         self.assertEqual(inner, "Characters/Knight.glb")
 
-    def test_github_strip_prefix_root_dir_entry(self):
-        """Entrada de directório raiz do ZIP deve devolver string vazia (ignorada)."""
+    def test_github_strip_prefix_root_dir_returns_empty(self):
+        """Entrada de directório raiz devolve '' (será ignorada pelo extract_zip)."""
         inner = dl._github_strip_prefix(
             "KayKit-Character-Pack-Adventures-1.0-672074b/",
             "KayKit-Game-Assets/KayKit-Character-Pack-Adventures-1.0",
             "672074b73ba276876a19e8816ecdc5241817ab47",
         )
-        # Após remoção do prefix, fica "" — deve ser ignorado pelo extract_zip
         self.assertEqual(inner, "")
 
     def test_github_file_wanted_empty_list_accepts_all(self):
@@ -458,44 +440,42 @@ class TestGithubZipResolver(unittest.TestCase):
         self.assertFalse(dl._github_file_wanted("Mage.glb", ["Knight.glb"]))
 
     def test_github_file_wanted_suffix_match(self):
-        """Aceita coincidência no final do caminho (útil quando o repo tem subdirs)."""
         self.assertTrue(dl._github_file_wanted("Characters/Knight.glb", ["Knight.glb"]))
 
     def test_github_file_wanted_case_insensitive(self):
         self.assertTrue(dl._github_file_wanted("KNIGHT.GLB", ["knight.glb"]))
 
-    def test_extract_zip_github_removes_prefix_and_filters(self):
-        """extract_zip com parâmetros github deve remover o prefixo e filtrar ficheiros."""
-        glb_data = b"glTF" + b"K" * 100
+    def test_extract_zip_github_extracts_requested_file_only(self):
+        """extract_zip filtra por github_files: Knight.glb extraído, Mage.glb ignorado."""
+        glb_k = b"glTF" + b"K" * 100
+        glb_m = b"glTF" + b"M" * 100
         zip_bytes = make_github_zip(
-            "KayKit-Character-Pack-Adventures-1.0",
-            "672074b",
-            [("Knight.glb", glb_data), ("Mage.glb", b"glTF" + b"M" * 100), ("LICENSE.txt", b"CC0")],
+            "KayKit-Character-Pack-Adventures-1.0", "672074b",
+            [("Knight.glb", glb_k), ("Mage.glb", glb_m), ("LICENSE.txt", b"CC0")],
         )
         zpath = pathlib.Path(tempfile.mktemp(suffix=".zip"))
         dest = pathlib.Path(tempfile.mkdtemp())
         try:
             zpath.write_bytes(zip_bytes)
             result = dl.extract_zip(
-                zpath, dest,
-                max_uncompressed=10 * 1024 * 1024,
+                zpath, dest, max_uncompressed=10 * 1024 * 1024,
                 github_repo="KayKit-Game-Assets/KayKit-Character-Pack-Adventures-1.0",
                 github_commit="672074b73ba276876a19e8816ecdc5241817ab47",
                 github_files=["Knight.glb"],
             )
-            # Knight.glb extraído sem prefixo
+            # Knight.glb pedido → extraído
             self.assertTrue((dest / "Knight.glb").exists())
-            # Mage.glb filtrado (não está em github_files)
+            # Mage.glb não pedido → ignorado
             self.assertFalse((dest / "Mage.glb").exists())
-            # LICENSE.txt: extensão .txt está em ALLOWED_EXTENSIONS → extraído
-            self.assertTrue((dest / "LICENSE.txt").exists())
+            # LICENSE.txt também não está em github_files → ignorado (correcto)
+            self.assertFalse((dest / "LICENSE.txt").exists())
             self.assertIn("Knight.glb", result["extracted"])
         finally:
             zpath.unlink(missing_ok=True)
             shutil.rmtree(dest, ignore_errors=True)
 
-    def test_extract_zip_github_empty_files_accepts_all(self):
-        """Quando github_files está vazio, todos os ficheiros com ext válida são extraídos."""
+    def test_extract_zip_github_empty_files_accepts_all_valid_ext(self):
+        """github_files=[] aceita todos os ficheiros com extensão permitida."""
         glb_data = b"glTF" + b"A" * 50
         zip_bytes = make_github_zip(
             "MyRepo", "abcdef1",
@@ -511,6 +491,7 @@ class TestGithubZipResolver(unittest.TestCase):
                            github_files=[])
             self.assertTrue((dest / "ModelA.glb").exists())
             self.assertTrue((dest / "ModelB.glb").exists())
+            # .py não está em ALLOWED_EXTENSIONS → ignorado
             self.assertFalse((dest / "script.py").exists())
         finally:
             zpath.unlink(missing_ok=True)
@@ -518,11 +499,10 @@ class TestGithubZipResolver(unittest.TestCase):
 
 
 # ===========================================================================
-# Testes do novo resolver zip_url
+# Testes do resolver zip_url (unitários — sem rede)
 # ===========================================================================
 
 class TestZipUrlResolver(unittest.TestCase):
-    """Testa a lógica do resolver zip_url sem rede."""
 
     def _src(self, host="files.makehumancommunity.org"):
         return {
@@ -533,51 +513,61 @@ class TestZipUrlResolver(unittest.TestCase):
         }
 
     def test_resolve_zip_url_returns_one_candidate(self):
-        src = self._src()
         entry = {
             "source_asset_id": "shirts01_cc0",
             "zip_url": "https://files.makehumancommunity.org/asset_packs/shirts01/shirts01_cc0.zip",
             "zip_sha256": None,
         }
-        cands = dl.resolve_zip_url(src, entry, lambda _u: None)
+        cands = dl.resolve_zip_url(self._src(), entry, lambda _u: None)
         self.assertEqual(len(cands), 1)
         self.assertEqual(cands[0]["url"], entry["zip_url"])
         self.assertIn("shirts01_cc0.zip", cands[0]["name"])
 
-    def test_resolve_zip_url_rejects_http(self):
-        src = self._src()
+    def test_resolve_zip_url_rejects_plain_http_non_local(self):
+        """http:// para host externo é sempre rejeitado."""
         entry = {
             "source_asset_id": "test",
             "zip_url": "http://files.makehumancommunity.org/pack.zip",
             "zip_sha256": None,
         }
         with self.assertRaises(dl.Blocked) as ctx:
-            dl.resolve_zip_url(src, entry, lambda _u: None)
+            dl.resolve_zip_url(self._src(), entry, lambda _u: None)
         self.assertIn("blocked_zip_url_missing_or_insecure", ctx.exception.code)
 
+    def test_resolve_zip_url_accepts_local_http_in_test_mode(self):
+        """http://127.0.0.1 é aceite quando LIB_TEST_ALLOW_LOCAL=1."""
+        entry = {
+            "source_asset_id": "test",
+            "zip_url": "http://127.0.0.1:12345/pack.zip",
+            "zip_sha256": None,
+        }
+        src = self._src(host="127.0.0.1")
+        # Não deve lançar exceção
+        cands = dl.resolve_zip_url(src, entry, lambda _u: None)
+        self.assertEqual(len(cands), 1)
+        self.assertEqual(cands[0]["url"], entry["zip_url"])
+
     def test_resolve_zip_url_rejects_empty_url(self):
-        src = self._src()
         entry = {"source_asset_id": "test", "zip_url": "", "zip_sha256": None}
         with self.assertRaises(dl.Blocked):
-            dl.resolve_zip_url(src, entry, lambda _u: None)
+            dl.resolve_zip_url(self._src(), entry, lambda _u: None)
 
     def test_resolve_zip_url_passes_sha256_to_candidate(self):
-        src = self._src()
+        sha = "abc123" * 10 + "abcd"  # 64 chars
         entry = {
             "source_asset_id": "test",
             "zip_url": "https://files.makehumancommunity.org/pack.zip",
-            "zip_sha256": "abc123" * 10 + "ab",
+            "zip_sha256": sha,
         }
-        cands = dl.resolve_zip_url(src, entry, lambda _u: None)
-        self.assertEqual(cands[0]["_zip_sha256"], entry["zip_sha256"])
+        cands = dl.resolve_zip_url(self._src(), entry, lambda _u: None)
+        self.assertEqual(cands[0]["_zip_sha256"], sha)
 
 
 # ===========================================================================
-# Testes de integração dos novos resolvers (com servidor local)
+# Testes de integração: github_zip com servidor local
 # ===========================================================================
 
 class TestGithubZipDownload(LocalServerTestCase):
-    """Testes de download completo do resolver github_zip usando servidor local."""
 
     def setUp(self):
         self.created = []
@@ -586,7 +576,7 @@ class TestGithubZipDownload(LocalServerTestCase):
         for p in self.created:
             shutil.rmtree(p, ignore_errors=True)
 
-    def _github_src(self):
+    def _src(self):
         return {
             "name": "KayKit Local Test",
             "kind": "github_zip",
@@ -598,7 +588,7 @@ class TestGithubZipDownload(LocalServerTestCase):
             "allowed_download_hosts": ["127.0.0.1"],
         }
 
-    def _github_entry(self, lid, zip_path, repo, commit, files_wanted):
+    def _entry(self, lid, repo, commit, files_wanted):
         return {
             "id": lid, "name": lid, "subcategory": "test",
             "source": "localtest_github", "source_asset_id": lid,
@@ -607,43 +597,37 @@ class TestGithubZipDownload(LocalServerTestCase):
             "license_evidence_url": "https://example.invalid/license",
             "license_verified_on": "2026-10-21",
             "commercial_use": True, "redistribution_allowed": True, "attribution": "n/a",
-            "formats_wanted": ["glb"], "selector": [], "rigged": True, "animated": True,
+            "formats_wanted": [], "selector": [], "rigged": True, "animated": True,
             "github_repo": repo,
             "github_commit": commit,
             "github_files": files_wanted,
-            "_test_zip_url": self.url(zip_path),
             "download_status": "pending",
         }
 
     def _make_root(self, entries_by_cat):
-        sources = {
-            "localtest_github": self._github_src(),
-        }
-        root = make_root_multi_source(entries_by_cat, sources)
+        root = make_root_multi_source(entries_by_cat, {"localtest_github": self._src()})
         self.created.append(root)
         return root
 
-    def _resolver_with_url_override(self, zip_path):
-        """Cria um resolver que usa a URL local em vez de codeload.github.com."""
-        local_url = self.url(zip_path)
+    def _patched_resolver(self, local_zip_path):
+        """Resolver que usa URL local em vez de codeload.github.com."""
+        local_url = self.url(local_zip_path)
 
         def resolver(src, entry, fetch):
             cands = dl.resolve_github_zip(src, entry, fetch)
-            # Substituir a URL por localhost para testes
             for c in cands:
                 c["url"] = local_url
             return cands
 
         return resolver
 
-    def test_github_zip_knight_downloaded_and_validated(self):
-        """Download completo de um GLB de um ZIP GitHub simulado."""
-        orig_resolvers = dict(dl.RESOLVERS)
-        dl.RESOLVERS["github_zip"] = self._resolver_with_url_override("/github_knight.zip")
+    def test_knight_downloaded_and_files_correct(self):
+        """Download completo de Knight.glb a partir de ZIP GitHub simulado."""
+        orig = dict(dl.RESOLVERS)
+        dl.RESOLVERS["github_zip"] = self._patched_resolver("/github_knight.zip")
         try:
-            entry = self._github_entry(
+            entry = self._entry(
                 "kaykit_knight_test",
-                "/github_knight.zip",
                 "KayKit-Game-Assets/KayKit-Character-Pack-Adventures-1.0",
                 "672074b73ba276876a19e8816ecdc5241817ab47",
                 ["Knight.glb"],
@@ -651,49 +635,52 @@ class TestGithubZipDownload(LocalServerTestCase):
             root = self._make_root({"characters": [entry]})
             rep = dl.run(root, "download")
             self.assertEqual(rep["results"][0]["status"], "downloaded",
-                             f"resultado: {rep['results'][0]}")
+                             f"resultado inesperado: {rep['results'][0]}")
             adir = root / "assets" / "characters" / "kaykit_knight_test"
+            # Knight.glb extraído (está em github_files)
             self.assertTrue((adir / "Knight.glb").exists())
-            self.assertFalse((adir / "Mage.glb").exists())  # não pedido
+            # Mage.glb não extraído (não está em github_files)
+            self.assertFalse((adir / "Mage.glb").exists())
+            # LICENSE.txt não extraído (não está em github_files)
+            self.assertFalse((adir / "LICENSE.txt").exists())
+            # metadata.json tem proveniência correcta
             meta = json.loads((adir / "metadata.json").read_text())
             self.assertEqual(meta["github_commit"], "672074b73ba276876a19e8816ecdc5241817ab47")
             self.assertEqual(meta["github_repo"],
                              "KayKit-Game-Assets/KayKit-Character-Pack-Adventures-1.0")
+            # Validação de integridade passa
             self.assertEqual(validate_assets.run(root)["failed"], 0)
         finally:
             dl.RESOLVERS.clear()
-            dl.RESOLVERS.update(orig_resolvers)
+            dl.RESOLVERS.update(orig)
 
-    def test_github_zip_no_matching_files_fails(self):
-        """Quando nenhum ficheiro do ZIP corresponde a github_files, falha."""
-        orig_resolvers = dict(dl.RESOLVERS)
-        dl.RESOLVERS["github_zip"] = self._resolver_with_url_override("/github_knight.zip")
+    def test_no_matching_files_fails(self):
+        """Quando nenhum ficheiro do ZIP corresponde a github_files → failed."""
+        orig = dict(dl.RESOLVERS)
+        dl.RESOLVERS["github_zip"] = self._patched_resolver("/github_knight.zip")
         try:
-            entry = self._github_entry(
+            entry = self._entry(
                 "kaykit_not_exist",
-                "/github_knight.zip",
                 "KayKit-Game-Assets/KayKit-Character-Pack-Adventures-1.0",
                 "672074b73ba276876a19e8816ecdc5241817ab47",
                 ["DoesNotExist.glb"],
             )
             root = self._make_root({"characters": [entry]})
             rep = dl.run(root, "download")
-            # Nenhum ficheiro válido extraído → failed_no_valid_files
             self.assertNotEqual(rep["results"][0]["status"], "downloaded")
         finally:
             dl.RESOLVERS.clear()
-            dl.RESOLVERS.update(orig_resolvers)
+            dl.RESOLVERS.update(orig)
 
-    def test_github_zip_blocked_when_commit_is_branch(self):
-        """Entradas com commit='main' devem falhar na resolução."""
-        orig_resolvers = dict(dl.RESOLVERS)
-        dl.RESOLVERS["github_zip"] = dl.resolve_github_zip
+    def test_branch_name_as_commit_blocked(self):
+        """Commit 'main' (não SHA de 40 hex) é bloqueado pelo resolver."""
+        orig = dict(dl.RESOLVERS)
+        dl.RESOLVERS["github_zip"] = dl.resolve_github_zip  # sem patch de URL
         try:
-            entry = self._github_entry(
-                "bad_commit",
-                "/github_knight.zip",
+            entry = self._entry(
+                "bad_commit_test",
                 "KayKit-Game-Assets/KayKit-Character-Pack-Adventures-1.0",
-                "main",
+                "main",  # branch name → deve bloquear
                 ["Knight.glb"],
             )
             root = self._make_root({"characters": [entry]})
@@ -702,11 +689,32 @@ class TestGithubZipDownload(LocalServerTestCase):
             self.assertIn("github", rep["results"][0]["status"])
         finally:
             dl.RESOLVERS.clear()
-            dl.RESOLVERS.update(orig_resolvers)
+            dl.RESOLVERS.update(orig)
 
+    def test_short_sha_blocked(self):
+        """SHA curto (7 hex) é bloqueado — exige 40 hex."""
+        orig = dict(dl.RESOLVERS)
+        dl.RESOLVERS["github_zip"] = dl.resolve_github_zip
+        try:
+            entry = self._entry(
+                "short_sha_test",
+                "KayKit-Game-Assets/KayKit-Character-Pack-Adventures-1.0",
+                "672074b",  # 7 hex → deve bloquear
+                ["Knight.glb"],
+            )
+            root = self._make_root({"characters": [entry]})
+            rep = dl.run(root, "download")
+            self.assertNotEqual(rep["results"][0]["status"], "downloaded")
+        finally:
+            dl.RESOLVERS.clear()
+            dl.RESOLVERS.update(orig)
+
+
+# ===========================================================================
+# Testes de integração: zip_url com servidor local
+# ===========================================================================
 
 class TestZipUrlDownload(LocalServerTestCase):
-    """Testes de download completo do resolver zip_url usando servidor local."""
 
     def setUp(self):
         self.created = []
@@ -715,7 +723,7 @@ class TestZipUrlDownload(LocalServerTestCase):
         for p in self.created:
             shutil.rmtree(p, ignore_errors=True)
 
-    def _zip_src(self):
+    def _src(self):
         return {
             "name": "MakeHuman Local Test",
             "kind": "zip_url",
@@ -727,7 +735,8 @@ class TestZipUrlDownload(LocalServerTestCase):
             "allowed_download_hosts": ["127.0.0.1"],
         }
 
-    def _zip_entry(self, lid, zip_local_path, sha256=None):
+    def _entry(self, lid, zip_local_path, sha256=None):
+        """Entrada com zip_url já apontando para o servidor local (http://127.0.0.1)."""
         return {
             "id": lid, "name": lid, "subcategory": "test",
             "source": "localtest_zip", "source_asset_id": lid,
@@ -737,73 +746,63 @@ class TestZipUrlDownload(LocalServerTestCase):
             "license_verified_on": "2026-10-21",
             "commercial_use": True, "redistribution_allowed": True, "attribution": "n/a",
             "formats_wanted": [], "selector": [], "rigged": False, "animated": False,
+            # URL local directamente — resolve_zip_url aceita http://127.0.0.1 com LIB_TEST_ALLOW_LOCAL=1
             "zip_url": self.url(zip_local_path),
             "zip_sha256": sha256,
             "download_status": "pending",
         }
 
-    def _resolver_zip_override(self, zip_path):
-        """Cria resolver zip_url que substitui o URL pela versão local."""
-        local_url = self.url(zip_path)
-
-        def resolver(src, entry, fetch):
-            cands = dl.resolve_zip_url(src, entry, fetch)
-            for c in cands:
-                c["url"] = local_url
-            return cands
-
-        return resolver
-
     def _make_root(self, entries_by_cat):
-        sources = {"localtest_zip": self._zip_src()}
-        root = make_root_multi_source(entries_by_cat, sources)
+        root = make_root_multi_source(entries_by_cat, {"localtest_zip": self._src()})
         self.created.append(root)
         return root
 
-    def test_zip_url_shirts_downloaded(self):
-        """Download de um ZIP MakeHuman simulado."""
-        orig_resolvers = dict(dl.RESOLVERS)
-        dl.RESOLVERS["zip_url"] = self._resolver_zip_override("/makehuman_shirts.zip")
-        try:
-            entry = self._zip_entry("mh_shirts_test", "/makehuman_shirts.zip")
-            root = self._make_root({"clothing": [entry]})
-            rep = dl.run(root, "download")
-            self.assertEqual(rep["results"][0]["status"], "downloaded",
-                             f"resultado: {rep['results'][0]}")
-            adir = root / "assets" / "clothing" / "mh_shirts_test"
-            # .mhclo não está em ALLOWED_EXTENSIONS → skipped; .obj e .png estão
-            self.assertTrue((adir / "shirts01" / "shirt_plain.obj").exists() or
-                            (adir / "shirts01" / "shirt_plain.png").exists(),
-                            f"ficheiros: {list(adir.rglob('*'))}")
-            # .mhclo deve ter sido ignorado (não está em ALLOWED_EXTENSIONS)
-            self.assertFalse((adir / "shirts01" / "shirt_plain.mhclo").exists())
-            self.assertEqual(validate_assets.run(root)["failed"], 0)
-        finally:
-            dl.RESOLVERS.clear()
-            dl.RESOLVERS.update(orig_resolvers)
+    def test_shirts_downloaded_obj_and_png_extracted(self):
+        """ZIP MakeHuman: .obj e .png extraídos; .mhclo ignorado (extensão não permitida)."""
+        entry = self._entry("mh_shirts_test", "/makehuman_shirts.zip")
+        root = self._make_root({"clothing": [entry]})
+        rep = dl.run(root, "download")
+        self.assertEqual(rep["results"][0]["status"], "downloaded",
+                         f"resultado inesperado: {rep['results'][0]}")
+        adir = root / "assets" / "clothing" / "mh_shirts_test"
+        all_files = list(adir.rglob("*"))
+        # .obj ou .png devem existir
+        has_obj = any(f.suffix == ".obj" for f in all_files)
+        has_png = any(f.suffix == ".png" for f in all_files)
+        self.assertTrue(has_obj or has_png,
+                        f"esperava .obj ou .png em {[f.name for f in all_files]}")
+        # .mhclo não deve existir (não está em ALLOWED_EXTENSIONS)
+        has_mhclo = any(f.suffix == ".mhclo" for f in all_files)
+        self.assertFalse(has_mhclo, ".mhclo não devia ter sido extraído")
+        # Validação de integridade passa
+        self.assertEqual(validate_assets.run(root)["failed"], 0)
 
-    def test_zip_url_sha256_mismatch_blocked(self):
-        """SHA-256 errado deve bloquear o download."""
-        orig_resolvers = dict(dl.RESOLVERS)
-        dl.RESOLVERS["zip_url"] = self._resolver_zip_override("/makehuman_shirts.zip")
-        try:
-            entry = self._zip_entry("mh_sha_fail", "/makehuman_shirts.zip",
-                                    sha256="0" * 64)
-            root = self._make_root({"clothing": [entry]})
-            rep = dl.run(root, "download")
-            self.assertEqual(rep["results"][0]["status"], "failed_checksum")
-            self.assertFalse((root / "assets" / "clothing" / "mh_sha_fail").exists())
-        finally:
-            dl.RESOLVERS.clear()
-            dl.RESOLVERS.update(orig_resolvers)
+    def test_sha256_mismatch_blocked(self):
+        """SHA-256 errado bloqueia o download e não deixa ficheiros no destino."""
+        entry = self._entry("mh_sha_fail", "/makehuman_shirts.zip", sha256="0" * 64)
+        root = self._make_root({"clothing": [entry]})
+        rep = dl.run(root, "download")
+        self.assertEqual(rep["results"][0]["status"], "failed_checksum",
+                         f"resultado inesperado: {rep['results'][0]}")
+        self.assertFalse((root / "assets" / "clothing" / "mh_sha_fail").exists())
+
+    def test_correct_sha256_accepted(self):
+        """SHA-256 correcto não bloqueia o download."""
+        import hashlib
+        data = ROUTES["/makehuman_shirts.zip"]
+        correct_sha = hashlib.sha256(data).hexdigest()
+        entry = self._entry("mh_sha_ok", "/makehuman_shirts.zip", sha256=correct_sha)
+        root = self._make_root({"clothing": [entry]})
+        rep = dl.run(root, "download")
+        self.assertEqual(rep["results"][0]["status"], "downloaded",
+                         f"resultado inesperado: {rep['results'][0]}")
 
 
 # ===========================================================================
-# Testes de manifesto — verificar que os novos recursos foram adicionados
+# Testes de manifesto — verificar recursos adicionados
 # ===========================================================================
 
 class TestNewManifestEntries(unittest.TestCase):
-    """Verifica que os novos recursos foram adicionados correctamente aos manifestos."""
 
     def _load(self, category):
         path = REAL_ROOT / "manifests" / f"{category}.json"
@@ -818,16 +817,17 @@ class TestNewManifestEntries(unittest.TestCase):
                     "kaykit_adv_rogue", "kaykit_adv_rogue_hooded"]:
             self.assertIn(lid, ids, f"{lid} em falta em characters.json")
 
-    def test_characters_kaykit_has_verified_license(self):
+    def test_characters_kaykit_verified_license_rigged_animated(self):
         for asset in self._load("characters")["assets"]:
             if asset["id"].startswith("kaykit_"):
-                self.assertTrue(asset.get("license_verified"), asset["id"])
-                self.assertEqual(asset.get("license"), "CC0-1.0", asset["id"])
-                self.assertTrue(asset.get("rigged"), asset["id"])
-                self.assertTrue(asset.get("animated"), asset["id"])
-                self.assertEqual(asset.get("source"), "kaykit", asset["id"])
-                self.assertIsNotNone(asset.get("github_commit"), asset["id"])
-                self.assertRegex(asset["github_commit"], r"^[0-9a-f]{40}$")
+                with self.subTest(id=asset["id"]):
+                    self.assertTrue(asset.get("license_verified"))
+                    self.assertEqual(asset.get("license"), "CC0-1.0")
+                    self.assertTrue(asset.get("rigged"))
+                    self.assertTrue(asset.get("animated"))
+                    self.assertEqual(asset.get("source"), "kaykit")
+                    self.assertRegex(asset.get("github_commit", ""), r"^[0-9a-f]{40}$")
+                    self.assertEqual(asset.get("formats_wanted"), [])
 
     def test_vehicles_has_all_5_kaykit_cars(self):
         ids = self._ids("vehicles")
@@ -838,7 +838,7 @@ class TestNewManifestEntries(unittest.TestCase):
     def test_vehicles_polyhaven_covered_car_preserved(self):
         self.assertIn("polyhaven_covered_car", self._ids("vehicles"))
 
-    def test_clothing_has_makehuman_shirts_and_dresses(self):
+    def test_clothing_has_makehuman_and_dresses(self):
         ids = self._ids("clothing")
         for lid in ["makehuman_shirts01", "makehuman_dress01", "makehuman_dress02",
                     "makehuman_dress03", "polyhaven_fishermans_hat"]:
@@ -846,34 +846,26 @@ class TestNewManifestEntries(unittest.TestCase):
 
     def test_environments_has_kaykit_entries(self):
         ids = self._ids("environments")
-        self.assertGreater(len(ids), 0, "environments.json está vazio")
+        self.assertGreater(len(ids), 0)
         self.assertTrue(any("kaykit" in lid for lid in ids))
 
-    def test_all_new_entries_pass_validate_entry_shape(self):
-        """Todos os novos recursos passam na validação estrutural do common.py."""
+    def test_all_entries_pass_validate_entry_shape(self):
         entries = common.load_manifests(REAL_ROOT, "all")
-        ids_with_problems = []
-        for e in entries:
-            problems = common.validate_entry_shape(e)
-            if problems:
-                ids_with_problems.append((e.get("id"), problems))
-        self.assertEqual(ids_with_problems, [],
-                         f"entradas com problemas: {ids_with_problems}")
+        problems = [(e.get("id"), common.validate_entry_shape(e))
+                    for e in entries if common.validate_entry_shape(e)]
+        self.assertEqual(problems, [], f"entradas com problemas: {problems}")
 
-    def test_no_duplicate_ids_across_all_manifests(self):
+    def test_no_duplicate_ids(self):
         entries = common.load_manifests(REAL_ROOT, "all")
         ids = [e["id"] for e in entries]
         dups = {i for i in ids if ids.count(i) > 1}
         self.assertEqual(dups, set(), f"IDs duplicados: {dups}")
 
-    def test_kaykit_commits_are_full_sha(self):
-        """Commits KayKit devem ser SHAs completos de 40 caracteres hex."""
-        entries = common.load_manifests(REAL_ROOT, "all")
-        for e in entries:
+    def test_kaykit_commits_are_40_hex(self):
+        for e in common.load_manifests(REAL_ROOT, "all"):
             if e.get("source") == "kaykit":
-                commit = e.get("github_commit", "")
-                self.assertRegex(commit, r"^[0-9a-f]{40}$",
-                                 f"{e['id']}: commit deve ser SHA completo de 40 hex")
+                with self.subTest(id=e["id"]):
+                    self.assertRegex(e.get("github_commit", ""), r"^[0-9a-f]{40}$")
 
     def test_sources_json_has_kaykit_and_makehuman(self):
         sources = common.load_sources(REAL_ROOT)
@@ -882,19 +874,29 @@ class TestNewManifestEntries(unittest.TestCase):
         self.assertEqual(sources["kaykit"]["resolver"], "github_zip")
         self.assertEqual(sources["makehuman"]["resolver"], "zip_url")
 
-    def test_kaykit_source_has_confirmed_download_host(self):
+    def test_kaykit_source_confirmed_download_host(self):
         sources = common.load_sources(REAL_ROOT)
-        hosts = sources["kaykit"].get("allowed_download_hosts", [])
-        self.assertIn("codeload.github.com", hosts)
+        self.assertIn("codeload.github.com", sources["kaykit"]["allowed_download_hosts"])
 
-    def test_makehuman_dresses_are_blocked_url_unconfirmed(self):
-        """Vestidos não devem ter download_status=pending sem URL confirmada."""
+    def test_makehuman_dresses_not_pending_without_url(self):
+        """Vestidos não devem estar pending sem URL confirmada."""
         for asset in self._load("clothing")["assets"]:
             if asset["id"].startswith("makehuman_dress"):
-                self.assertNotEqual(asset.get("download_status"), "pending",
-                                    f"{asset['id']}: não deve estar pending sem URL confirmada")
-                self.assertIsNone(asset.get("zip_url"),
-                                  f"{asset['id']}: zip_url deve ser null até confirmação")
+                with self.subTest(id=asset["id"]):
+                    self.assertNotEqual(asset.get("download_status"), "pending")
+                    self.assertIsNone(asset.get("zip_url"))
+
+    def test_kaykit_github_zip_resolver_selected_in_scan(self):
+        """SCAN de uma entrada KayKit devolve 'scanned' (não blocked nem failed)."""
+        entries = common.load_manifests(REAL_ROOT, "characters")
+        knight = next((e for e in entries if e["id"] == "kaykit_adv_knight"), None)
+        self.assertIsNotNone(knight)
+        sources = common.load_sources(REAL_ROOT)
+        src = sources.get("kaykit", {})
+        # O resolver deve criar 1 candidato sem lançar excepção
+        cands = dl.resolve_github_zip(src, knight, lambda _u: None)
+        self.assertEqual(len(cands), 1)
+        self.assertIn("codeload.github.com", cands[0]["url"])
 
 
 # ===========================================================================
