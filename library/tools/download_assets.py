@@ -39,7 +39,7 @@ from common import (  # noqa: E402
     sha256_file, utcnow, validate_entry_shape,
 )
 
-TOOL_VERSION = "0.3.1"
+TOOL_VERSION = "0.3.2"
 USER_AGENT = "Aurelhopedro-3D-library/0.1 (+https://github.com/Aurelhopedro/3D)"
 URL_KEYS = ("url", "downloadLink", "rawLink")
 RESERVED_ROOT_NAMES = frozenset({"metadata.json", "license.txt"})
@@ -405,7 +405,6 @@ def resolve_zip_url(src: Dict[str, Any], entry: Dict[str, Any],
     if not zip_url:
         raise Blocked("blocked_zip_url_missing_or_insecure", "zip_url ausente")
 
-    # Aceitar https:// sempre; aceitar http://127.0.0.1 em modo de teste local
     p = urllib.parse.urlparse(zip_url)
     is_https = p.scheme == "https"
     is_local_test = (p.scheme == "http"
@@ -453,10 +452,9 @@ def _github_strip_prefix(rel: str, repo: str, commit: str) -> Optional[str]:
     prefix = f"{repo_name}-{commit_short}/"
     if rel.startswith(prefix):
         return rel[len(prefix):]
-    # Fallback: remover qualquer primeiro segmento (cobre variações de versão do GitHub)
     parts = rel.split("/", 1)
     if len(parts) == 2:
-        return parts[1]  # pode ser "" para entradas de directório
+        return parts[1]
     return None
 
 
@@ -486,7 +484,8 @@ def extract_zip(zpath: pathlib.Path, dest: pathlib.Path, max_uncompressed: int,
       - Filtra por github_files (se não vazio)
 
     Protecções: ZIP Slip, symlinks, zip bombs, extensões não permitidas,
-    caminhos absolutos, entradas duplicadas, ZIP corrompido.
+    caminhos absolutos, ZIP corrompido, e nomes reservados na raiz
+    (metadata.json / LICENSE.txt pertencem ao gestor e nunca vêm do ZIP).
     """
     skipped: List[str] = []
     extracted: List[str] = []
@@ -531,6 +530,12 @@ def extract_zip(zpath: pathlib.Path, dest: pathlib.Path, max_uncompressed: int,
                     skipped.append(rel)
                     continue
                 rel = inner
+
+            # Nomes reservados na raiz: o gestor escreve os seus próprios
+            # metadata.json e LICENSE.txt; um ZIP nunca os pode fornecer/sobrescrever.
+            if "/" not in rel and rel.lower() in RESERVED_ROOT_NAMES:
+                skipped.append(rel)
+                continue
 
             ext = pathlib.PurePosixPath(rel).suffix.lower()
             if ext not in ALLOWED_EXTENSIONS:
