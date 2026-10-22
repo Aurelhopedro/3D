@@ -39,7 +39,7 @@ from common import (  # noqa: E402
     sha256_file, utcnow, validate_entry_shape,
 )
 
-TOOL_VERSION = "0.3.0"
+TOOL_VERSION = "0.3.1"
 USER_AGENT = "Aurelhopedro-3D-library/0.1 (+https://github.com/Aurelhopedro/3D)"
 URL_KEYS = ("url", "downloadLink", "rawLink")
 RESERVED_ROOT_NAMES = frozenset({"metadata.json", "license.txt"})
@@ -47,8 +47,8 @@ HARD_CAPS = {"max_downloads": 20, "max_total_mb": 500, "max_file_mb": 200}
 MAX_ZIP_ENTRIES = 2000
 MAX_ZIP_UNCOMPRESSED_MB = 300
 
-# Regex para commit SHA completo (40 hex) ou curto (>=7 hex)
-COMMIT_SHA_RE = re.compile(r"^[0-9a-f]{7,40}$")
+# Regex para commit SHA completo (40 hex) — NÃO aceita curto nem branch names
+COMMIT_SHA_RE = re.compile(r"^[0-9a-f]{40}$")
 
 
 # --------------------------------------------------------------------------
@@ -356,19 +356,15 @@ def resolve_github_zip(src: Dict[str, Any], entry: Dict[str, Any],
     """Resolver para repositórios GitHub públicos — descarrega o ZIP de um commit fixo.
 
     A entrada no manifesto deve conter:
-      github_repo   : "owner/repo"      (ex: "KayKit-Game-Assets/KayKit-Character-Pack-Adventures-1.0")
-      github_commit : "40-hex-SHA"      (commit completo e imutável)
-      github_files  : ["path/in/repo"]  (lista de caminhos a extrair do ZIP; vazio = tudo permitido)
-
-    O ZIP gerado pelo GitHub para um commit é imutável: o conteúdo não muda
-    se o commit for um SHA completo (não uma branch/tag). O ZIP é descarregado
-    de codeload.github.com (host confirmado em sources.json).
+      github_repo   : "owner/repo"        (ex: "KayKit-Game-Assets/KayKit-Character-Pack-Adventures-1.0")
+      github_commit : SHA completo 40 hex  (imutável — nunca um branch name ou tag)
+      github_files  : ["path/in/repo"]    (ficheiros a extrair do ZIP; [] = todos os permitidos)
 
     Segurança:
-    - commit_sha obrigatório e validado por regex.
-    - O ZIP é extraído com as proteções habituais (ZIP Slip, symlinks, extensões).
-    - Nenhum código do repositório externo é executado.
-    - Os ficheiros são filtrados por github_files quando especificado.
+      - Commit SHA de 40 hex obrigatório — rejeita branch names, tags, SHAs curtos.
+      - ZIP descarregado de codeload.github.com (host imutável para commits SHA).
+      - Extracção com remoção de prefixo e filtragem por github_files.
+      - Nenhum código do repositório externo é executado.
     """
     repo = entry.get("github_repo", "")
     commit = entry.get("github_commit", "")
@@ -378,28 +374,21 @@ def resolve_github_zip(src: Dict[str, Any], entry: Dict[str, Any],
         raise Blocked("blocked_github_no_repo", repr(repo))
     if not commit or not COMMIT_SHA_RE.match(commit):
         raise Blocked("blocked_github_no_commit",
-                      f"commit ausente ou inválido: {commit!r} — fixar sempre o SHA completo (40 hex)")
+                      f"commit deve ser SHA de 40 hex; recebido: {commit!r}")
 
-    # URL imutável: GitHub gera o mesmo ZIP para o mesmo commit SHA
     zip_url = f"https://codeload.github.com/{repo}/zip/{commit}"
-
-    # Nome local do ZIP (usado para candidate_rel_path)
     zip_name = repo.split("/")[-1] + f"_{commit[:8]}.zip"
 
-    # O candidato é um único ZIP; o contexto de download irá extraí-lo
-    # e filtrar por github_files através de github_filter_paths nos metadados
-    cand: Dict[str, Any] = {
+    return [{
         "url": zip_url,
         "keypath": ["github_zip", repo, commit],
         "size": None,
         "md5": None,
         "name": zip_name,
-        # Metadados extra passados ao extractor
         "_github_repo": repo,
         "_github_commit": commit,
         "_github_files": files_wanted,
-    }
-    return [cand]
+    }]
 
 
 def resolve_zip_url(src: Dict[str, Any], entry: Dict[str, Any],
@@ -407,29 +396,36 @@ def resolve_zip_url(src: Dict[str, Any], entry: Dict[str, Any],
     """Resolver para pacotes ZIP com URL directa (ex: MakeHuman Community).
 
     A entrada no manifesto deve conter:
-      zip_url       : URL HTTPS oficial do pacote
-      zip_sha256    : SHA-256 do arquivo (se conhecido; None bloqueia em modo strict)
+      zip_url    : URL HTTPS oficial do pacote
+      zip_sha256 : SHA-256 do arquivo (recomendado; None = sem verificação de integridade)
 
-    Segurança: idêntica ao github_zip mas sem a verificação de commit.
-    Usa o SHA-256 para integridade quando disponível.
+    Em modo de testes locais (LIB_TEST_ALLOW_LOCAL=1), aceita também http://127.0.0.1.
     """
     zip_url = entry.get("zip_url", "")
-    if not zip_url or not zip_url.startswith("https://"):
+    if not zip_url:
+        raise Blocked("blocked_zip_url_missing_or_insecure", "zip_url ausente")
+
+    # Aceitar https:// sempre; aceitar http://127.0.0.1 em modo de teste local
+    p = urllib.parse.urlparse(zip_url)
+    is_https = p.scheme == "https"
+    is_local_test = (p.scheme == "http"
+                     and (p.hostname or "") in ("127.0.0.1", "localhost")
+                     and _local_test_allowed())
+    if not is_https and not is_local_test:
         raise Blocked("blocked_zip_url_missing_or_insecure", repr(zip_url)[:80])
 
-    zip_name = os.path.basename(urllib.parse.urlparse(zip_url).path) or "asset.zip"
+    zip_name = os.path.basename(p.path) or "asset.zip"
     if not zip_name.lower().endswith(".zip"):
         zip_name += ".zip"
 
-    cand: Dict[str, Any] = {
+    return [{
         "url": zip_url,
         "keypath": ["zip_url", zip_url],
         "size": None,
         "md5": None,
         "name": zip_name,
         "_zip_sha256": entry.get("zip_sha256"),
-    }
-    return [cand]
+    }]
 
 
 RESOLVERS: Dict[str, Callable] = {
@@ -444,33 +440,31 @@ RESOLVERS: Dict[str, Callable] = {
 # ZIP seguro
 # --------------------------------------------------------------------------
 def _github_strip_prefix(rel: str, repo: str, commit: str) -> Optional[str]:
-    """Remove o prefixo que o GitHub injeta em ZIPs de commit.
+    """Remove o prefixo automático que o GitHub injeta em ZIPs de commit.
 
-    O GitHub gera ZIPs com um directório raiz do tipo:
-        <nome-do-repo>-<commit-curto>/
-    Exemplo: KayKit-Character-Pack-Adventures-1.0-672074b/Knight.glb
+    O GitHub gera: <nome-do-repo>-<commit[:7]>/ficheiro
+    Exemplo: KayKit-Character-Pack-Adventures-1.0-672074b/Knight.glb → Knight.glb
 
-    Esta função remove esse prefixo e devolve o caminho interno real.
-    Devolve None se o caminho não tiver prefixo (não deve acontecer).
+    Fallback: se o prefixo esperado não coincidir, remove qualquer primeiro segmento.
+    Devolve "" para entradas de directório raiz (a ignorar) e None se impossível.
     """
     repo_name = repo.split("/")[-1]
     commit_short = commit[:7]
     prefix = f"{repo_name}-{commit_short}/"
     if rel.startswith(prefix):
         return rel[len(prefix):]
-    # Tentativa alternativa: qualquer segmento inicial único
+    # Fallback: remover qualquer primeiro segmento (cobre variações de versão do GitHub)
     parts = rel.split("/", 1)
-    if len(parts) == 2 and parts[1]:
-        return parts[1]
+    if len(parts) == 2:
+        return parts[1]  # pode ser "" para entradas de directório
     return None
 
 
 def _github_file_wanted(inner_path: str, files_wanted: List[str]) -> bool:
-    """Verifica se um caminho interno do ZIP está na lista de ficheiros pretendidos.
+    """Verifica se inner_path está na lista de ficheiros pretendidos.
 
-    Se files_wanted estiver vazio, todos os ficheiros são aceites.
-    A comparação é case-sensitive (igual ao GitHub) e aceita coincidência
-    parcial no final do caminho (ex: "Knight.glb" coincide com "Characters/Knight.glb").
+    files_wanted vazio → todos aceites.
+    Comparação case-insensitive; aceita coincidência no sufixo do caminho.
     """
     if not files_wanted:
         return True
@@ -485,10 +479,14 @@ def _github_file_wanted(inner_path: str, files_wanted: List[str]) -> bool:
 def extract_zip(zpath: pathlib.Path, dest: pathlib.Path, max_uncompressed: int,
                 github_repo: str = "", github_commit: str = "",
                 github_files: Optional[List[str]] = None) -> Dict[str, Any]:
-    """Extrai com proteção contra ZIP Slip, symlinks, zip bombs e extensões inesperadas.
+    """Extrai ZIP com protecções de segurança completas.
 
-    Quando github_repo e github_commit são fornecidos, remove o prefixo automático
-    do GitHub e filtra por github_files.
+    Quando github_repo e github_commit são fornecidos:
+      - Remove o prefixo automático do GitHub (<repo>-<sha7>/)
+      - Filtra por github_files (se não vazio)
+
+    Protecções: ZIP Slip, symlinks, zip bombs, extensões não permitidas,
+    caminhos absolutos, entradas duplicadas, ZIP corrompido.
     """
     skipped: List[str] = []
     extracted: List[str] = []
@@ -517,19 +515,16 @@ def extract_zip(zpath: pathlib.Path, dest: pathlib.Path, max_uncompressed: int,
             total_declared += info.file_size
         if total_declared > max_uncompressed:
             raise Blocked("blocked_zip_too_large", f"{total_declared} bytes")
+
         written_total = 0
         for info in infos:
             if info.is_dir():
                 continue
             rel = info.filename
 
-            # Remover prefixo GitHub e filtrar por ficheiros pretendidos
             if is_github:
                 inner = _github_strip_prefix(rel, github_repo, github_commit)
-                if inner is None:
-                    skipped.append(rel)
-                    continue
-                if not inner:
+                if inner is None or inner == "":
                     skipped.append(rel)
                     continue
                 if not _github_file_wanted(inner, files_wanted):
@@ -682,10 +677,7 @@ def process_asset(ctx: Context, entry: Dict[str, Any], asset_id_filter: Optional
         principal_cands, entry.get("formats_wanted") or [], entry.get("selector") or []
     )
 
-    if selected_principal:
-        selected = selected_principal + dep_cands
-    else:
-        selected = []
+    selected = selected_principal + dep_cands if selected_principal else []
 
     all_for_report = cands
     allowed_hosts = list(src.get("allowed_download_hosts", []))
@@ -775,7 +767,6 @@ def _download_asset(ctx: Context, entry: Dict[str, Any], src: Dict[str, Any],
             if c.get("md5") and md5_file(target) != c["md5"]:
                 raise Blocked("failed_checksum", f"md5 diferente em {rel}")
 
-            # Verificar SHA-256 do ZIP quando fornecido pela fonte
             if is_zip and c.get("_zip_sha256"):
                 actual = sha256_file(target)
                 if actual != c["_zip_sha256"]:
@@ -786,7 +777,6 @@ def _download_asset(ctx: Context, entry: Dict[str, Any], src: Dict[str, Any],
                                  "sha256": sha256_file(target), "path": rel})
             if is_zip:
                 dest_dir = target.parent
-                # Passar metadados GitHub para extracção inteligente
                 gh_repo = c.get("_github_repo", "")
                 gh_commit = c.get("_github_commit", "")
                 gh_files = c.get("_github_files") or []
@@ -839,7 +829,6 @@ def _download_asset(ctx: Context, entry: Dict[str, Any], src: Dict[str, Any],
             "source_files": source_files,
             "skipped_extensions": sorted(set(skipped_ext)),
             "tool_version": TOOL_VERSION,
-            # Metadados de proveniência GitHub
             "github_repo": entry.get("github_repo"),
             "github_commit": entry.get("github_commit"),
         }
