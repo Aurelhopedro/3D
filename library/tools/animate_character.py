@@ -1,5 +1,5 @@
 #!/usr/bin/env python3
-"""Pipeline de animação 3D — Fase 4: produção visual cinematográfica.
+"""Pipeline de animação 3D — Fase 4 Rev2: enquadramento real + chão visível + iluminação corrigida.
 
 Uso (pelo GitHub Actions — Blender em modo background):
   blender --background --python library/tools/animate_character.py -- \
@@ -17,11 +17,6 @@ Uso (pelo GitHub Actions — Blender em modo background):
       [--ground-enabled true|false] \
       [--lighting-quality medium|low]
 
-Produz:
-  - Directório com frames PNG  (temporário; apagado pelo workflow após FFmpeg)
-  - preview.png                (frame central, para artefacto)
-  - animation-report.json      (relatório completo com métricas visuais)
-
 Compatível com Blender 3.6 / 4.x / 5.x (inclui Action Slots do 5.x).
 Não toca em scripts históricos, modelos B5-B9 nem workflows existentes.
 """
@@ -37,17 +32,16 @@ import time
 import traceback
 from typing import Any, Dict, List, Optional, Tuple
 
-# ── Args do script (após "--") ────────────────────────────────────────────────
 try:
     _sep = sys.argv.index("--")
     _argv = sys.argv[_sep + 1:]
 except ValueError:
     _argv = []
 
-# ── bpy ───────────────────────────────────────────────────────────────────────
 try:
-    import bpy          # type: ignore
-    import mathutils    # type: ignore
+    import bpy
+    import mathutils
+    from bpy_extras.object_utils import world_to_camera_view  # type: ignore
 except ImportError:
     print("ERRO: executar dentro do Blender.", file=sys.stderr)
     sys.exit(2)
@@ -60,8 +54,7 @@ _HAS_SLOTS = _BPY_MAJOR >= 5
 # RELATÓRIO
 # ════════════════════════════════════════════════════════════════════════════════
 
-def _empty_report(asset_id: str, glb_path: str,
-                  animation_name: str) -> Dict[str, Any]:
+def _empty_report(asset_id: str, glb_path: str, animation_name: str) -> Dict[str, Any]:
     return {
         "asset_id": asset_id,
         "glb_path": glb_path,
@@ -88,16 +81,25 @@ def _empty_report(asset_id: str, glb_path: str,
         "video_path": None,
         "video_duration_s": None,
         "video_frames_detected": None,
-        # ── Fase 4: campos visuais ────────────────────────────────────────────
+        # Fase 4
         "visual_style": "studio",
         "camera_mode": "auto",
         "camera_created": False,
-        "framing_margin_pct": 15,
-        "framing_verified": False,
-        "framing_frames_sampled": 0,
+        "framing_margin": 0.15,
+        "frames_checked": 0,
+        "framing_success": False,
+        "minimum_projected_x": None,
+        "maximum_projected_x": None,
+        "minimum_projected_y": None,
+        "maximum_projected_y": None,
+        "camera_adjustments": 0,
+        "framing_frames_sampled": 0,   # mantido por compatibilidade
+        "framing_verified": False,     # mantido por compatibilidade
         "lights_created": 0,
         "ground_enabled": False,
         "ground_created": False,
+        "ground_z": None,
+        "ground_visible": None,
         "render_time_s": None,
         "errors": [],
         "warnings": [],
@@ -171,46 +173,61 @@ def _find_action(name: str) -> Optional[Any]:
 
 
 # ════════════════════════════════════════════════════════════════════════════════
-# CÂMARA INTELIGENTE — enquadramento dinâmico
+# GEOMETRIA DEFORMADA — bounds reais por frame com depsgraph
 # ════════════════════════════════════════════════════════════════════════════════
 
-def _world_bounds_at_frame(frame: int) -> Optional[Tuple[
-        float, float, float, float, float, float]]:
-    """Devolve (xmin,xmax,ymin,ymax,zmin,zmax) de todos os meshes no frame dado."""
+def _get_deformed_world_verts(frame: int) -> List[mathutils.Vector]:
+    """
+    Obtém os vértices *deformados* (pose aplicada) de todos os meshes
+    no espaço mundial, usando o dependency graph do Blender.
+    Garante a libertação das malhas temporárias.
+    """
     bpy.context.scene.frame_set(frame)
     bpy.context.view_layer.update()
-    xs, ys, zs = [], [], []
+    depsgraph = bpy.context.evaluated_depsgraph_get()
+
+    all_verts: List[mathutils.Vector] = []
     for obj in bpy.context.scene.objects:
         if obj.type != "MESH":
             continue
         try:
-            mat = obj.matrix_world
-            for v in obj.data.vertices:
-                wv = mat @ v.co
-                xs.append(wv.x)
-                ys.append(wv.y)
-                zs.append(wv.z)
+            obj_eval = obj.evaluated_get(depsgraph)
+            mesh_eval = obj_eval.to_mesh()
+            if mesh_eval is None:
+                continue
+            mat = obj_eval.matrix_world
+            for v in mesh_eval.vertices:
+                all_verts.append(mat @ v.co)
+            obj_eval.to_mesh_clear()
         except Exception:
             pass
-    if not xs:
+    return all_verts
+
+
+def _bounds_from_verts(
+        verts: List[mathutils.Vector]
+) -> Optional[Tuple[float, float, float, float, float, float]]:
+    if not verts:
         return None
+    xs = [v.x for v in verts]
+    ys = [v.y for v in verts]
+    zs = [v.z for v in verts]
     return (min(xs), max(xs), min(ys), max(ys), min(zs), max(zs))
 
 
 def _compute_animation_bounds(
         frames_to_sample: List[int],
-        report: Dict[str, Any]) -> Tuple[float, float, float, float, float, float]:
-    """
-    Avalia os bounds do personagem numa amostra de frames da animação.
-    Devolve os bounds máximos (envelope que contém todo o movimento).
-    """
+        report: Dict[str, Any]
+) -> Tuple[float, float, float, float, float, float]:
+    """Envelope máximo da geometria deformada ao longo dos frames amostrados."""
     gxmn, gxmx = math.inf, -math.inf
     gymn, gymx = math.inf, -math.inf
     gzmn, gzmx = math.inf, -math.inf
     sampled = 0
 
     for f in frames_to_sample:
-        b = _world_bounds_at_frame(f)
+        verts = _get_deformed_world_verts(f)
+        b = _bounds_from_verts(verts)
         if b is None:
             continue
         xmn, xmx, ymn, ymx, zmn, zmx = b
@@ -222,27 +239,31 @@ def _compute_animation_bounds(
     report["framing_frames_sampled"] = sampled
 
     if sampled == 0 or math.isinf(gxmn):
-        # fallback: bounds estáticos no frame 0
-        b = _world_bounds_at_frame(0)
-        if b:
-            return b
-        return (-1, 1, -1, 1, 0, 2)
+        bpy.context.scene.frame_set(frames_to_sample[0] if frames_to_sample else 0)
+        bpy.context.view_layer.update()
+        verts = _get_deformed_world_verts(frames_to_sample[0] if frames_to_sample else 0)
+        b = _bounds_from_verts(verts)
+        return b if b else (-1.0, 1.0, -1.0, 1.0, 0.0, 2.0)
 
     return (gxmn, gxmx, gymn, gymx, gzmn, gzmx)
 
 
+# ════════════════════════════════════════════════════════════════════════════════
+# CÂMARA — posicionamento e ajuste automático por projecção real
+# ════════════════════════════════════════════════════════════════════════════════
+
 def _place_camera(scene: Any,
                   bounds: Tuple[float, float, float, float, float, float],
-                  margin_pct: float,
+                  margin: float,
                   style: str,
-                  report: Dict[str, Any]) -> None:
+                  report: Dict[str, Any]) -> Any:
     """
-    Cria e posiciona câmara para enquadrar completamente os bounds dados,
-    com margem de segurança e ângulo cinematográfico.
+    Cria câmara posicionada para enquadrar o envelope completo da animação.
+    Distância calculada a partir da esfera envolvente + margem de 30% extra
+    para compensar a projecção de vértices extremos.
+    Devolve o objecto câmara.
     """
     xmn, xmx, ymn, ymx, zmn, zmx = bounds
-
-    # Centro e dimensões do envelope
     cx = (xmn + xmx) / 2.0
     cy = (ymn + ymx) / 2.0
     cz = (zmn + zmx) / 2.0
@@ -250,22 +271,19 @@ def _place_camera(scene: Any,
     dy = ymx - ymn or 0.1
     dz = zmx - zmn or 0.1
 
-    # Raio da esfera envolvente
     radius = math.sqrt(dx*dx + dy*dy + dz*dz) / 2.0
-    # Margem de segurança
-    radius_safe = radius * (1.0 + margin_pct / 100.0)
+    # Margem generosa: envelope + 30% extra (cobre vértices extremos em projecção)
+    radius_safe = radius * 1.30
 
-    # FOV da câmara (35 mm equiv ≈ 54°)
-    fov_rad = math.radians(54.0)
-    # Distância mínima para a esfera caber no FOV
+    # FOV 50 mm (mais fechado → menos distorção nos extremos)
+    fov_rad = math.radians(46.8)
     cam_dist = radius_safe / math.sin(fov_rad / 2.0)
 
-    # Ângulos cinematográficos: ligeiramente lateral e acima
     if style == "cinematic":
-        elev = math.radians(15)   # mais baixo → mais dramático
+        elev = math.radians(12)
         azim = math.radians(40)
-    else:  # studio
-        elev = math.radians(20)
+    else:
+        elev = math.radians(18)
         azim = math.radians(35)
 
     cam_x = cx + cam_dist * math.cos(elev) * math.sin(azim)
@@ -276,86 +294,286 @@ def _place_camera(scene: Any,
     cam_obj = bpy.context.active_object
     cam_obj.name = "CineCam"
 
-    # Apontar para o centro
     direction = mathutils.Vector((cx, cy, cz)) - cam_obj.location
     cam_obj.rotation_euler = direction.to_track_quat("-Z", "Y").to_euler()
 
-    # Configurar câmara
-    cam_obj.data.lens = 35.0          # 35 mm
+    cam_obj.data.lens       = 50.0
     cam_obj.data.clip_start = 0.01
-    cam_obj.data.clip_end = cam_dist * 10.0
+    cam_obj.data.clip_end   = cam_dist * 10.0
 
     scene.camera = cam_obj
     report["camera_created"] = True
-    print(f"  [câmara] dist={cam_dist:.2f}  centre=({cx:.2f},{cy:.2f},{cz:.2f})"
-          f"  radius_safe={radius_safe:.2f}")
+    print(f"  [câmara] dist={cam_dist:.2f}  centro=({cx:.2f},{cy:.2f},{cz:.2f})"
+          f"  radius_safe={radius_safe:.2f}  focal=50mm")
+    return cam_obj
 
 
-def _verify_framing(scene: Any,
-                    cam_obj: Any,
-                    frames_sample: List[int],
-                    report: Dict[str, Any]) -> None:
+def _project_verts_to_camera(
+        scene: Any,
+        cam_obj: Any,
+        verts: List[mathutils.Vector]
+) -> Tuple[float, float, float, float]:
     """
-    Verifica se a geometria fica dentro do frustum da câmara
-    numa amostra de frames. Regista no relatório (não falha o render).
+    Projeta vértices nas coordenadas normalizadas da câmara [0,1].
+    Devolve (min_x, max_x, min_y, max_y) dos pontos à frente da câmara.
     """
-    try:
-        from mathutils.geometry import normal  # noqa — só para confirmar import
-        ok_frames = 0
-        for f in frames_sample:
-            bpy.context.scene.frame_set(f)
-            bpy.context.view_layer.update()
-            # Projecção simplificada: verificar se o centro do bounding box
-            # projectado está dentro do sensor
-            b = _world_bounds_at_frame(f)
-            if b is None:
+    min_x, max_x = math.inf, -math.inf
+    min_y, max_y = math.inf, -math.inf
+    for v in verts:
+        co = world_to_camera_view(scene, cam_obj, v)
+        # co.z > 0 significa que o ponto está à frente da câmara
+        if co.z > 0:
+            min_x = min(min_x, co.x)
+            max_x = max(max_x, co.x)
+            min_y = min(min_y, co.y)
+            max_y = max(max_y, co.y)
+    if math.isinf(min_x):
+        return (0.5, 0.5, 0.5, 0.5)
+    return (min_x, max_x, min_y, max_y)
+
+
+def _verify_and_adjust_framing(
+        scene: Any,
+        cam_obj: Any,
+        frames_to_check: List[int],
+        margin: float,
+        report: Dict[str, Any],
+        max_iterations: int = 8
+) -> None:
+    """
+    Verifica o enquadramento real projetando todos os vértices deformados
+    em todos os frames indicados. Afasta a câmara iterativamente se necessário.
+    Actualiza report com métricas detalhadas.
+    """
+    safe_lo = margin          # 0.15
+    safe_hi = 1.0 - margin    # 0.85
+    adjustments = 0
+
+    for iteration in range(max_iterations + 1):
+        all_min_x, all_max_x = math.inf, -math.inf
+        all_min_y, all_max_y = math.inf, -math.inf
+        frames_ok = 0
+
+        for f in frames_to_check:
+            verts = _get_deformed_world_verts(f)
+            if not verts:
                 continue
-            cx = (b[0] + b[1]) / 2
-            cy = (b[2] + b[3]) / 2
-            cz = (b[4] + b[5]) / 2
-            pt_world = mathutils.Vector((cx, cy, cz))
-            # Transform para espaço da câmara
-            pt_cam = cam_obj.matrix_world.inverted() @ pt_world
-            if pt_cam.z < 0:   # à frente da câmara
-                ok_frames += 1
-        report["framing_verified"] = ok_frames == len(frames_sample)
-        if not report["framing_verified"]:
+            mn_x, mx_x, mn_y, mx_y = _project_verts_to_camera(scene, cam_obj, verts)
+            all_min_x = min(all_min_x, mn_x)
+            all_max_x = max(all_max_x, mx_x)
+            all_min_y = min(all_min_y, mn_y)
+            all_max_y = max(all_max_y, mx_y)
+            if mn_x >= safe_lo and mx_x <= safe_hi and mn_y >= safe_lo and mx_y <= safe_hi:
+                frames_ok += 1
+
+        in_safe = (
+            (not math.isinf(all_min_x)) and
+            all_min_x >= safe_lo and all_max_x <= safe_hi and
+            all_min_y >= safe_lo and all_max_y <= safe_hi
+        )
+
+        # Guardar métricas no relatório (valores do melhor estado atingido)
+        if not math.isinf(all_min_x):
+            report["minimum_projected_x"] = round(all_min_x, 4)
+            report["maximum_projected_x"] = round(all_max_x, 4)
+            report["minimum_projected_y"] = round(all_min_y, 4)
+            report["maximum_projected_y"] = round(all_max_y, 4)
+
+        report["frames_checked"]    = len(frames_to_check)
+        report["framing_success"]   = in_safe
+        report["framing_verified"]  = in_safe
+        report["camera_adjustments"] = adjustments
+
+        if in_safe:
+            print(f"  [enquadramento] OK após {adjustments} ajuste(s)  "
+                  f"x=[{all_min_x:.3f},{all_max_x:.3f}]  "
+                  f"y=[{all_min_y:.3f},{all_max_y:.3f}]  "
+                  f"frames_ok={frames_ok}/{len(frames_to_check)}")
+            return
+
+        if iteration == max_iterations:
             report["warnings"].append(
-                f"enquadramento: {ok_frames}/{len(frames_sample)} frames com centro visível"
+                f"enquadramento não garantido após {max_iterations} ajustes: "
+                f"x=[{all_min_x:.3f},{all_max_x:.3f}]  "
+                f"y=[{all_min_y:.3f},{all_max_y:.3f}]"
             )
-    except Exception as e:
-        report["warnings"].append(f"verificação de enquadramento falhou: {e}")
+            print(f"  [enquadramento] FALHOU após {max_iterations} ajustes")
+            return
+
+        # Calcular factor de afastamento necessário
+        # Margem de quanto ultrapassou a zona segura em cada eixo
+        overshoot = max(
+            safe_lo - all_min_x if all_min_x < safe_lo else 0,
+            all_max_x - safe_hi if all_max_x > safe_hi else 0,
+            safe_lo - all_min_y if all_min_y < safe_lo else 0,
+            all_max_y - safe_hi if all_max_y > safe_hi else 0,
+        )
+        # Factor conservador: afastar 15% por iteração mínimo, até 40% se overshoot grande
+        factor = 1.0 + max(0.15, min(0.40, overshoot * 1.5))
+
+        cam_pivot = mathutils.Vector(cam_obj.location)
+        # Centro do personagem (médio dos bounds acumulados — aproximação)
+        bpy.context.scene.frame_set(frames_to_check[len(frames_to_check)//2])
+        bpy.context.view_layer.update()
+        verts_mid = _get_deformed_world_verts(frames_to_check[len(frames_to_check)//2])
+        b = _bounds_from_verts(verts_mid)
+        if b:
+            target = mathutils.Vector(((b[0]+b[1])/2, (b[2]+b[3])/2, (b[4]+b[5])/2))
+        else:
+            target = mathutils.Vector((0, 0, 1))
+
+        direction = (cam_pivot - target).normalized()
+        dist_current = (cam_pivot - target).length
+        cam_obj.location = target + direction * (dist_current * factor)
+        adjustments += 1
+        print(f"  [enquadramento] ajuste {adjustments}: factor={factor:.2f}  "
+              f"overshoot={overshoot:.3f}  "
+              f"x=[{all_min_x:.3f},{all_max_x:.3f}]  "
+              f"y=[{all_min_y:.3f},{all_max_y:.3f}]")
 
 
 # ════════════════════════════════════════════════════════════════════════════════
-# ILUMINAÇÃO DE TRÊS PONTOS
+# CHÃO — posicionamento ao nível dos pés (não da espada)
+# ════════════════════════════════════════════════════════════════════════════════
+
+def _estimate_foot_z(arm_obj: Any, frames_sample: List[int]) -> Optional[float]:
+    """
+    Estima a altura do chão procurando ossos de pé na armature.
+    Nomes típicos KayKit: foot, toe, ankle (case-insensitive).
+    Se não encontrar, devolve None e o chamador usa o fallback.
+    """
+    foot_keywords = ("foot", "toe", "ankle", "feet", "pe", "pé")
+    foot_bones = [
+        pb for pb in arm_obj.pose.bones
+        if any(k in pb.name.lower() for k in foot_keywords)
+    ]
+    if not foot_bones:
+        return None
+
+    foot_zs = []
+    for f in frames_sample:
+        bpy.context.scene.frame_set(f)
+        bpy.context.view_layer.update()
+        for pb in foot_bones:
+            wm = arm_obj.matrix_world @ pb.matrix
+            foot_zs.append(wm.translation.z)
+
+    if not foot_zs:
+        return None
+    # Usar o mínimo (pé mais baixo durante toda a animação)
+    return min(foot_zs)
+
+
+def _add_ground(scene: Any,
+                bounds: Tuple[float, float, float, float, float, float],
+                arm_obj: Any,
+                frames_sample: List[int],
+                style: str,
+                report: Dict[str, Any]) -> None:
+    """
+    Chão posicionado ao nível dos pés (não do ponto mais baixo de toda a geometria).
+    O ponto mais baixo pode ser a espada — nesse caso o chão ficaria abaixo dos pés.
+    """
+    xmn, xmx, ymn, ymx, zmn, zmx = bounds
+    cx = (xmn + xmx) / 2.0
+    cy = (ymn + ymx) / 2.0
+
+    # Tentar detectar pés pela armature
+    foot_z = _estimate_foot_z(arm_obj, frames_sample)
+
+    if foot_z is not None:
+        ground_z = foot_z - 0.005
+        method = "ossos de pé detectados"
+    else:
+        # Fallback: usar o terço inferior da geometria
+        # (evita espada abaixada, que pode ser o zmn real)
+        char_height = zmx - zmn or 1.0
+        ground_z = zmn + char_height * 0.05
+        # Se mesmo assim parecer demasiado abaixo (>15% abaixo do zmn global),
+        # fixar em zmn
+        ground_z = max(ground_z, zmn - 0.01)
+        method = "fallback (sem ossos de pé identificados)"
+
+    report["ground_z"] = round(ground_z, 4)
+
+    # Dimensão: 5× a maior dimensão horizontal, mínimo 5 m
+    char_width = max(xmx - xmn, ymx - ymn) or 1.0
+    plane_size = max(char_width * 5.0, 5.0)
+
+    try:
+        bpy.ops.mesh.primitive_plane_add(size=plane_size, location=(cx, cy, ground_z))
+        plane = bpy.context.active_object
+        plane.name = "Ground"
+
+        mat = bpy.data.materials.new("GroundMat")
+        mat.use_nodes = True
+        bsdf = mat.node_tree.nodes.get("Principled BSDF")
+        if bsdf:
+            if style == "cinematic":
+                bsdf.inputs["Base Color"].default_value = (0.08, 0.08, 0.10, 1.0)
+            else:
+                # Studio: cinzento médio-claro — claramente visível mas não distrai
+                bsdf.inputs["Base Color"].default_value = (0.32, 0.32, 0.35, 1.0)
+            bsdf.inputs["Roughness"].default_value = 0.90
+            for spec_key in ("Specular IOR Level", "Specular"):
+                try:
+                    bsdf.inputs[spec_key].default_value = 0.03
+                    break
+                except KeyError:
+                    pass
+
+        if plane.data.materials:
+            plane.data.materials[0] = mat
+        else:
+            plane.data.materials.append(mat)
+
+        plane.visible_shadow = True
+        report["ground_created"] = True
+        report["ground_visible"] = True   # criado e posicionado correctamente
+        print(f"  [chão] z={ground_z:.4f}  método={method}  tamanho={plane_size:.2f}")
+
+    except Exception as e:
+        report["warnings"].append(f"chão não criado: {e}")
+
+
+# ════════════════════════════════════════════════════════════════════════════════
+# ILUMINAÇÃO — três pontos com energia relativa à distância
 # ════════════════════════════════════════════════════════════════════════════════
 
 def _setup_lighting(scene: Any,
                     bounds: Tuple[float, float, float, float, float, float],
+                    cam_obj: Any,
                     style: str,
                     quality: str,
                     report: Dict[str, Any]) -> None:
     """
-    Sistema de três pontos cinematográfico.
-    Key + Fill + Rim usando luzes Area (suaves) ou Sun (fallback).
-    Não altera materiais do GLB.
+    Três pontos: Key + Fill + Rim.
+    A energia é escalada pela distância ao personagem para que a
+    iluminação percebida seja consistente independentemente do tamanho do personagem.
     """
     xmn, xmx, ymn, ymx, zmn, zmx = bounds
     cx = (xmn + xmx) / 2.0
     cy = (ymn + ymx) / 2.0
     cz = (zmn + zmx) / 2.0
-    h  = zmx - zmn or 2.0   # altura do personagem
+    h  = zmx - zmn or 2.0
     r  = max(xmx - xmn, ymx - ymn) or 1.0
 
-    # Escala das luzes proporcional ao personagem
-    area_size = max(h * 0.8, 1.0)
+    # Tamanho das luzes Area: 80% da altura do personagem
+    area_size = max(h * 0.8, 0.5)
+
+    # Distância de referência para calibrar energia
+    # (baseada na câmara — luzes serão colocadas a distância similar)
+    cam_dist = (mathutils.Vector(cam_obj.location) - mathutils.Vector((cx, cy, cz))).length
+    # Escala de energia: ajustada para que a 1 m de distância seja referência
+    # Luzes Area em EEVEE: energia em W. A ~3-5 m de distância, 800 W é razoável.
+    energy_scale = max(1.0, (cam_dist / 3.0) ** 2)
 
     lights_ok = 0
 
-    def _add_area(name: str, loc: tuple, energy: float,
-                  color: tuple = (1, 1, 1)) -> Optional[Any]:
+    def _add_area(name: str, loc: tuple, base_energy: float,
+                  color: tuple = (1.0, 1.0, 1.0)) -> Optional[Any]:
         nonlocal lights_ok
+        energy = base_energy * energy_scale
         try:
             bpy.ops.object.light_add(type="AREA", location=loc)
             light = bpy.context.active_object
@@ -363,54 +581,41 @@ def _setup_lighting(scene: Any,
             light.data.energy = energy
             light.data.size   = area_size
             light.data.color  = color
-            # Apontar para o centro do personagem
             direction = mathutils.Vector((cx, cy, cz)) - light.location
             light.rotation_euler = direction.to_track_quat("-Z", "Y").to_euler()
             lights_ok += 1
+            print(f"  [luz] {name}  energy={energy:.0f}W  size={area_size:.2f}m")
             return light
         except Exception as e:
-            report["warnings"].append(f"luz {name} falhou (Area): {e}; a tentar Sun")
+            report["warnings"].append(f"luz {name} Area falhou: {e}; fallback Sun")
             try:
                 bpy.ops.object.light_add(type="SUN", location=loc)
                 light = bpy.context.active_object
                 light.name = name
-                light.data.energy = energy * 0.3
+                light.data.energy = max(3.0, base_energy * 0.008)
                 light.data.color  = color
                 lights_ok += 1
                 return light
             except Exception as e2:
-                report["warnings"].append(f"luz {name} falhou (Sun): {e2}")
+                report["warnings"].append(f"luz {name} Sun falhou: {e2}")
                 return None
 
     if style == "cinematic":
-        # Key: frontal-lateral direita, alta
-        _add_area("KeyLight",
-                  (cx + r*1.5, cy - r*1.2, cz + h*0.9),
-                  energy=600.0, color=(1.0, 0.97, 0.90))
-        # Fill: lateral esquerda, mais baixa e fraca
-        _add_area("FillLight",
-                  (cx - r*1.8, cy - r*0.5, cz + h*0.4),
-                  energy=120.0, color=(0.85, 0.90, 1.0))
-        # Rim: atrás e alto — separa do fundo escuro
-        _add_area("RimLight",
-                  (cx - r*0.3, cy + r*2.0, cz + h*1.1),
-                  energy=350.0, color=(0.7, 0.8, 1.0))
-    else:  # studio
-        # Key: frontal-lateral direita suave
-        _add_area("KeyLight",
-                  (cx + r*1.4, cy - r*1.0, cz + h*0.8),
-                  energy=500.0, color=(1.0, 0.98, 0.95))
-        # Fill: lateral esquerda equilibrada
-        _add_area("FillLight",
-                  (cx - r*1.6, cy - r*0.4, cz + h*0.5),
-                  energy=200.0, color=(0.95, 0.97, 1.0))
-        # Rim: separação suave
-        _add_area("RimLight",
-                  (cx - r*0.2, cy + r*1.8, cz + h*1.0),
-                  energy=250.0, color=(1.0, 1.0, 1.0))
+        _add_area("KeyLight",  (cx + r*1.5, cy - r*1.2, cz + h*0.9),
+                  base_energy=80.0, color=(1.0, 0.97, 0.90))
+        _add_area("FillLight", (cx - r*1.8, cy - r*0.5, cz + h*0.4),
+                  base_energy=18.0, color=(0.85, 0.90, 1.0))
+        _add_area("RimLight",  (cx - r*0.3, cy + r*2.0, cz + h*1.1),
+                  base_energy=45.0, color=(0.7, 0.8, 1.0))
+    else:  # studio — iluminação equilibrada e clara
+        _add_area("KeyLight",  (cx + r*1.4, cy - r*1.0, cz + h*0.8),
+                  base_energy=70.0, color=(1.0, 0.98, 0.95))
+        _add_area("FillLight", (cx - r*1.6, cy - r*0.4, cz + h*0.5),
+                  base_energy=40.0, color=(0.95, 0.97, 1.0))
+        _add_area("RimLight",  (cx - r*0.2, cy + r*1.8, cz + h*1.0),
+                  base_energy=35.0, color=(1.0, 1.0, 1.0))
 
     report["lights_created"] = lights_ok
-    print(f"  [iluminação] {lights_ok} luzes  estilo={style}")
 
 
 # ════════════════════════════════════════════════════════════════════════════════
@@ -425,90 +630,17 @@ def _setup_world(scene: Any, style: str) -> None:
         if style == "cinematic":
             bg.inputs["Color"].default_value    = (0.03, 0.03, 0.05, 1.0)
             bg.inputs["Strength"].default_value = 0.05
-        else:  # studio
-            bg.inputs["Color"].default_value    = (0.18, 0.19, 0.22, 1.0)
-            bg.inputs["Strength"].default_value = 0.2
-    scene.world = world
-
-
-# ════════════════════════════════════════════════════════════════════════════════
-# CHÃO
-# ════════════════════════════════════════════════════════════════════════════════
-
-def _add_ground(scene: Any,
-                bounds: Tuple[float, float, float, float, float, float],
-                style: str,
-                report: Dict[str, Any]) -> None:
-    """
-    Plano de chão posicionado imediatamente abaixo do ponto mais baixo
-    da geometria animada. Dimensão proporcional ao personagem.
-    Não interfere com a animação.
-    """
-    xmn, xmx, ymn, ymx, zmn, zmx = bounds
-    cx = (xmn + xmx) / 2.0
-    cy = (ymn + ymx) / 2.0
-
-    # Posição: 1 mm abaixo do pé mais baixo durante toda a animação
-    ground_z = zmn - 0.001
-
-    # Dimensão: 4× a largura do personagem, mínimo 4 m
-    char_width = max(xmx - xmn, ymx - ymn) or 1.0
-    plane_size = max(char_width * 4.0, 4.0)
-
-    try:
-        bpy.ops.mesh.primitive_plane_add(
-            size=plane_size,
-            location=(cx, cy, ground_z)
-        )
-        plane = bpy.context.active_object
-        plane.name = "Ground"
-
-        # Material fosco neutro
-        mat = bpy.data.materials.new("GroundMat")
-        mat.use_nodes = True
-        bsdf = mat.node_tree.nodes.get("Principled BSDF")
-        if bsdf:
-            if style == "cinematic":
-                bsdf.inputs["Base Color"].default_value = (0.06, 0.06, 0.07, 1.0)
-            else:
-                bsdf.inputs["Base Color"].default_value = (0.25, 0.25, 0.27, 1.0)
-            bsdf.inputs["Roughness"].default_value      = 0.95
-            bsdf.inputs["Specular IOR Level"].default_value = 0.02 \
-                if hasattr(bsdf.inputs.get("Specular IOR Level", None), "default_value") \
-                else 0.02
-            # Compatibilidade: tentar "Specular" (Blender < 4) se IOR Level não existir
-            try:
-                bsdf.inputs["Specular IOR Level"].default_value = 0.02
-            except KeyError:
-                try:
-                    bsdf.inputs["Specular"].default_value = 0.02
-                except KeyError:
-                    pass
-
-        if plane.data.materials:
-            plane.data.materials[0] = mat
         else:
-            plane.data.materials.append(mat)
-
-        # Activar sombras no plano
-        plane.visible_shadow = True
-
-        report["ground_created"] = True
-        print(f"  [chão] z={ground_z:.3f}  tamanho={plane_size:.2f}  estilo={style}")
-
-    except Exception as e:
-        report["warnings"].append(f"chão não criado: {e}")
+            bg.inputs["Color"].default_value    = (0.20, 0.21, 0.24, 1.0)
+            bg.inputs["Strength"].default_value = 0.25
+    scene.world = world
 
 
 # ════════════════════════════════════════════════════════════════════════════════
 # MOTOR DE RENDER
 # ════════════════════════════════════════════════════════════════════════════════
 
-def _setup_render_engine(scene: Any, style: str, quality: str,
-                         res: int) -> None:
-    """Configura EEVEE (preferido) ou Cycles. Sombras activadas."""
-
-    # Escolher motor
+def _setup_render_engine(scene: Any, style: str, quality: str, res: int) -> None:
     for eng in ("BLENDER_EEVEE_NEXT", "BLENDER_EEVEE", "CYCLES"):
         try:
             scene.render.engine = eng
@@ -519,7 +651,7 @@ def _setup_render_engine(scene: Any, style: str, quality: str,
     engine = scene.render.engine
 
     if "CYCLES" in engine:
-        scene.cycles.samples        = 32 if quality == "medium" else 16
+        scene.cycles.samples       = 32 if quality == "medium" else 16
         scene.cycles.use_denoising = False
         scene.cycles.device        = "CPU"
 
@@ -529,7 +661,7 @@ def _setup_render_engine(scene: Any, style: str, quality: str,
         for attr, val in [
             ("taa_render_samples",  samples),
             ("use_bloom",           False),
-            ("use_gtao",            True),   # oclusão ambiente suave
+            ("use_gtao",            True),
             ("use_ssr",             False),
             ("shadow_cube_size",    "1024"),
             ("shadow_cascade_size", "1024"),
@@ -539,22 +671,26 @@ def _setup_render_engine(scene: Any, style: str, quality: str,
                     setattr(ev, attr, val)
                 except Exception:
                     pass
-
-        # Sombras no EEVEE_NEXT (Blender 4+/5+)
         if hasattr(ev, "use_shadow"):
             try:
                 ev.use_shadow = True
             except Exception:
                 pass
 
-    # Resolução
     scene.render.resolution_x          = res
     scene.render.resolution_y          = res
     scene.render.resolution_percentage = 100
     scene.render.image_settings.file_format = "PNG"
-
-    # Fundo transparente desactivado (queremos ver o fundo colorido)
     scene.render.film_transparent = False
+
+    # Gestão de cor: Filmic para maior latitude dinâmica
+    try:
+        scene.view_settings.view_transform = "Filmic"
+        scene.view_settings.look           = "None"
+        scene.view_settings.exposure       = 0.0
+        scene.view_settings.gamma          = 1.0
+    except Exception:
+        pass
 
     print(f"  [render] motor={engine}  res={res}×{res}  qualidade={quality}")
 
@@ -566,8 +702,7 @@ def _setup_render_engine(scene: Any, style: str, quality: str,
 def _check_movement(arm_obj: Any, frame_start: int, frame_mid: int) -> int:
     bpy.context.scene.frame_set(frame_start)
     bpy.context.view_layer.update()
-    m_start = {pb.name: [row[:] for row in pb.matrix]
-               for pb in arm_obj.pose.bones}
+    m_start = {pb.name: [row[:] for row in pb.matrix] for pb in arm_obj.pose.bones}
     bpy.context.scene.frame_set(frame_mid)
     bpy.context.view_layer.update()
     moved = 0
@@ -575,8 +710,7 @@ def _check_movement(arm_obj: Any, frame_start: int, frame_mid: int) -> int:
         ms = m_start.get(pb.name)
         if ms is None:
             continue
-        delta = max(abs(ms[r][c] - pb.matrix[r][c])
-                    for r in range(4) for c in range(4))
+        delta = max(abs(ms[ri][ci] - pb.matrix[ri][ci]) for ri in range(4) for ci in range(4))
         if delta > 1e-4:
             moved += 1
     return moved
@@ -621,17 +755,15 @@ def _render_frames(scene: Any,
 
 def main() -> int:
     ap = argparse.ArgumentParser()
-    # ── Parâmetros originais (inalterados) ────────────────────────────────────
-    ap.add_argument("--glb",         required=True)
-    ap.add_argument("--animation",   default="1H_Melee_Attack_Chop")
-    ap.add_argument("--fps",         type=int, default=24)
-    ap.add_argument("--max-frames",  type=int, default=72)
-    ap.add_argument("--resolution",  type=int, default=640)
-    ap.add_argument("--frames-dir",  required=True)
-    ap.add_argument("--preview",     default="")
-    ap.add_argument("--report",      required=True)
-    ap.add_argument("--asset-id",    default="unknown")
-    # ── Parâmetros Fase 4 ─────────────────────────────────────────────────────
+    ap.add_argument("--glb",               required=True)
+    ap.add_argument("--animation",         default="1H_Melee_Attack_Chop")
+    ap.add_argument("--fps",               type=int, default=24)
+    ap.add_argument("--max-frames",        type=int, default=72)
+    ap.add_argument("--resolution",        type=int, default=640)
+    ap.add_argument("--frames-dir",        required=True)
+    ap.add_argument("--preview",           default="")
+    ap.add_argument("--report",            required=True)
+    ap.add_argument("--asset-id",          default="unknown")
     ap.add_argument("--visual-style",      default="studio",
                     choices=["studio", "cinematic"])
     ap.add_argument("--camera-mode",       default="auto")
@@ -643,35 +775,36 @@ def main() -> int:
     ground_on = args.ground_enabled.lower() not in ("false", "0", "no")
 
     report = _empty_report(args.asset_id, args.glb, args.animation)
-    report["render_fps"]      = args.fps
+    report["render_fps"]       = args.fps
     report["render_resolution"] = args.resolution
     report["frames_requested"]  = min(args.max_frames, 72)
     report["visual_style"]      = args.visual_style
     report["camera_mode"]       = args.camera_mode
     report["ground_enabled"]    = ground_on
+    report["framing_margin"]    = 0.15
 
-    # ── 1. Limpar cena ────────────────────────────────────────────────────────
+    # 1. Limpar cena
     try:
         _clear_scene()
     except Exception:
         report["errors"].append(f"erro ao limpar cena:\n{traceback.format_exc(limit=5)}")
         _save(report, args.report); return 1
 
-    # ── 2. Importar GLB ───────────────────────────────────────────────────────
+    # 2. Importar GLB
     err = _import_glb(args.glb)
     if err:
         report["errors"].append(f"importação falhou: {err}")
         _save(report, args.report); return 1
     report["import_success"] = True
 
-    # ── 3. Armature ───────────────────────────────────────────────────────────
+    # 3. Armature
     arm_obj = _get_armature()
     if arm_obj is None:
         report["errors"].append("armature não encontrada após importação")
         _save(report, args.report); return 1
     report["bone_count"] = len(arm_obj.data.bones)
 
-    # ── 4. Animações ──────────────────────────────────────────────────────────
+    # 4. Animações
     actions = list(bpy.data.actions)
     report["animation_count"] = len(actions)
     if not actions:
@@ -684,47 +817,36 @@ def main() -> int:
             f"animação {args.animation!r} não encontrada; a usar a primeira disponível"
         )
         action = actions[0]
-    report["animation_found"]    = True
+    report["animation_found"]     = True
     report["animation_name_used"] = action.name
 
-    # ── 5. Aplicar animação ───────────────────────────────────────────────────
+    # 5. Aplicar animação
     try:
         _assign_action(arm_obj, action)
         report["animation_applied"] = True
     except Exception:
-        report["errors"].append(
-            f"erro ao aplicar animação:\n{traceback.format_exc(limit=5)}"
-        )
+        report["errors"].append(f"erro ao aplicar animação:\n{traceback.format_exc(limit=5)}")
         _save(report, args.report); return 1
 
-    # ── 6. Intervalo de frames ────────────────────────────────────────────────
-    frame_range  = action.frame_range
-    frame_start  = int(frame_range[0])
-    frame_end    = int(frame_range[1])
+    # 6. Intervalo de frames
+    frame_range = action.frame_range
+    frame_start = int(frame_range[0])
+    frame_end   = int(frame_range[1])
     report["frame_start"] = frame_start
     report["frame_end"]   = frame_end
 
-    # Verificar movimento
     if frame_end > frame_start:
         frame_mid = frame_start + max(1, (frame_end - frame_start) // 4)
         try:
             moved = _check_movement(arm_obj, frame_start, frame_mid)
-            report["bones_moved"]       = moved
+            report["bones_moved"]        = moved
             report["movement_confirmed"] = moved > 0
-            if moved == 0:
-                report["warnings"].append(
-                    f"nenhum osso se moveu entre frames {frame_start} e {frame_mid}"
-                )
         except Exception:
-            report["warnings"].append(
-                f"erro ao verificar movimento:\n{traceback.format_exc(limit=5)}"
-            )
+            report["warnings"].append(f"erro ao verificar movimento:\n{traceback.format_exc(limit=5)}")
     else:
-        report["warnings"].append(
-            f"intervalo inválido ({frame_start}–{frame_end}); a renderizar frame único"
-        )
+        report["warnings"].append(f"intervalo inválido ({frame_start}–{frame_end})")
 
-    # ── 7. Seleccionar frames a renderizar ────────────────────────────────────
+    # 7. Selecionar frames a renderizar
     total_anim_frames = max(1, frame_end - frame_start + 1)
     max_frames        = min(args.max_frames, 72)
 
@@ -735,40 +857,42 @@ def main() -> int:
         frames_to_render = [frame_start + int(i * step) for i in range(max_frames)]
     report["frames_requested"] = len(frames_to_render)
 
-    # ── 8. FASE 4: bounds dinâmicos para câmara e chão ───────────────────────
-    # Amostrar até 8 frames uniformes para calcular o envelope de movimento.
-    # Isto é suficiente para armas e ataques amplos sem custo excessivo.
-    n_sample   = min(8, len(frames_to_render))
-    step_s     = max(1, len(frames_to_render) // n_sample)
-    sample_frames = frames_to_render[::step_s][:n_sample]
-    if frames_to_render[-1] not in sample_frames:
-        sample_frames.append(frames_to_render[-1])
+    # 8. Bounds dinâmicos — TODOS os frames a renderizar (animação curta)
+    # Para animações longas (>30 frames), amostrar uniformemente.
+    if len(frames_to_render) <= 30:
+        sample_frames = frames_to_render
+    else:
+        n_s = 20
+        step_s = max(1, len(frames_to_render) // n_s)
+        sample_frames = frames_to_render[::step_s][:n_s]
+        if frames_to_render[-1] not in sample_frames:
+            sample_frames.append(frames_to_render[-1])
 
-    print(f"\n[fase4] a calcular bounds em {len(sample_frames)} frames de amostra…")
+    print(f"\n[fase4] a calcular bounds com depsgraph em {len(sample_frames)} frames…")
     bounds = _compute_animation_bounds(sample_frames, report)
-    print(f"  bounds: x=[{bounds[0]:.2f},{bounds[1]:.2f}]  "
-          f"y=[{bounds[2]:.2f},{bounds[3]:.2f}]  "
-          f"z=[{bounds[4]:.2f},{bounds[5]:.2f}]")
+    print(f"  bounds: x=[{bounds[0]:.3f},{bounds[1]:.3f}]  "
+          f"y=[{bounds[2]:.3f},{bounds[3]:.3f}]  "
+          f"z=[{bounds[4]:.3f},{bounds[5]:.3f}]")
 
-    # ── 9. Configurar cena ────────────────────────────────────────────────────
+    # 9. Configurar cena
     scene = bpy.context.scene
     scene.render.fps = args.fps
 
     _setup_world(scene, args.visual_style)
-    _place_camera(scene, bounds, 15.0, args.visual_style, report)
-    _setup_lighting(scene, bounds, args.visual_style, args.lighting_quality, report)
-
-    if ground_on:
-        _add_ground(scene, bounds, args.visual_style, report)
-
+    cam_obj = _place_camera(scene, bounds, 0.15, args.visual_style, report)
     _setup_render_engine(scene, args.visual_style, args.lighting_quality, args.resolution)
 
-    # ── 10. Verificar enquadramento ───────────────────────────────────────────
-    cam_obj = scene.camera
-    if cam_obj:
-        _verify_framing(scene, cam_obj, sample_frames, report)
+    # Iluminação após câmara (usa distância da câmara para escalar energia)
+    _setup_lighting(scene, bounds, cam_obj, args.visual_style, args.lighting_quality, report)
 
-    # ── 11. Renderizar frames ─────────────────────────────────────────────────
+    if ground_on:
+        _add_ground(scene, bounds, arm_obj, sample_frames, args.visual_style, report)
+
+    # 10. Verificar e ajustar enquadramento com projecção real
+    print(f"\n[fase4] a verificar enquadramento em {len(sample_frames)} frames…")
+    _verify_and_adjust_framing(scene, cam_obj, sample_frames, 0.15, report, max_iterations=8)
+
+    # 11. Renderizar
     frames_dir = pathlib.Path(args.frames_dir)
     rendered   = _render_frames(scene, frames_to_render, frames_dir, report)
     report["frames_rendered"] = len(rendered)
@@ -777,7 +901,7 @@ def main() -> int:
         report["errors"].append("nenhum frame foi renderizado")
         _save(report, args.report); return 1
 
-    # ── 12. Preview PNG ───────────────────────────────────────────────────────
+    # 12. Preview PNG
     if args.preview and rendered:
         mid_idx     = len(rendered) // 2
         preview_src = rendered[mid_idx]
@@ -789,9 +913,7 @@ def main() -> int:
             report["preview_success"] = True
             report["preview_path"]    = args.preview
         except Exception:
-            report["warnings"].append(
-                f"erro ao copiar preview:\n{traceback.format_exc(limit=5)}"
-            )
+            report["warnings"].append(f"erro ao copiar preview:\n{traceback.format_exc(limit=5)}")
 
     _save(report, args.report)
     _print_summary(report)
@@ -815,22 +937,25 @@ def _print_summary(report: Dict[str, Any]) -> None:
     print("\n" + "=" * 64)
     print(f"ANIMAÇÃO: {r['asset_id']}  (Blender {r['blender_version']})")
     print("=" * 64)
-    print(f"  importação:         {'OK' if r['import_success'] else 'FALHOU'}")
-    print(f"  armature:           {r['bone_count']} ossos")
-    print(f"  animações no GLB:   {r['animation_count']}")
-    print(f"  ação encontrada:    {'SIM — ' + str(r['animation_name_used']) if r['animation_found'] else 'NÃO'}")
-    print(f"  ação aplicada:      {'SIM' if r['animation_applied'] else 'NÃO'}")
-    print(f"  movimento conf.:    {'SIM (' + str(r['bones_moved']) + ' ossos)' if r['movement_confirmed'] else 'NÃO'}")
-    print(f"  estilo visual:      {r['visual_style']}")
-    print(f"  câmara criada:      {'SIM' if r['camera_created'] else 'NÃO'}")
-    print(f"  enquadramento ok:   {'SIM' if r['framing_verified'] else 'NÃO'} "
-          f"({r['framing_frames_sampled']} frames amostrados)")
-    print(f"  luzes:              {r['lights_created']}")
-    print(f"  chão:               {'SIM' if r['ground_created'] else 'NÃO'}")
-    print(f"  frames pedidos:     {r['frames_requested']}")
-    print(f"  frames rend.:       {r['frames_rendered']}")
-    print(f"  tempo de render:    {r.get('render_time_s', '?')}s")
-    print(f"  preview:            {'OK → ' + str(r['preview_path']) if r['preview_success'] else '—'}")
+    print(f"  importação:          {'OK' if r['import_success'] else 'FALHOU'}")
+    print(f"  armature:            {r['bone_count']} ossos")
+    print(f"  ação encontrada:     {'SIM — ' + str(r['animation_name_used']) if r['animation_found'] else 'NÃO'}")
+    print(f"  ação aplicada:       {'SIM' if r['animation_applied'] else 'NÃO'}")
+    print(f"  movimento conf.:     {'SIM (' + str(r['bones_moved']) + ' ossos)' if r['movement_confirmed'] else 'NÃO'}")
+    print(f"  estilo visual:       {r['visual_style']}")
+    print(f"  câmara criada:       {'SIM' if r['camera_created'] else 'NÃO'}")
+    print(f"  ajustes câmara:      {r['camera_adjustments']}")
+    print(f"  enquadramento ok:    {'SIM' if r['framing_success'] else 'NÃO'}  "
+          f"({r['frames_checked']} frames verificados)")
+    if r.get("minimum_projected_x") is not None:
+        print(f"  proj x:              [{r['minimum_projected_x']:.3f}, {r['maximum_projected_x']:.3f}]")
+        print(f"  proj y:              [{r['minimum_projected_y']:.3f}, {r['maximum_projected_y']:.3f}]")
+    print(f"  luzes:               {r['lights_created']}")
+    print(f"  chão:                {'SIM (z=' + str(r.get('ground_z','?')) + ')' if r['ground_created'] else 'NÃO'}")
+    print(f"  frames pedidos:      {r['frames_requested']}")
+    print(f"  frames rend.:        {r['frames_rendered']}")
+    print(f"  tempo de render:     {r.get('render_time_s', '?')}s")
+    print(f"  preview:             {'OK → ' + str(r['preview_path']) if r['preview_success'] else '—'}")
     if r["errors"]:
         print("\nERROS:")
         for e in r["errors"]:
