@@ -55,6 +55,36 @@ on:
         type: string
         required: false
         default: '0'
+      # ── Fase 4: parâmetros visuais ──────────────────────────────────────
+      visual_style:
+        description: 'Estilo visual (studio = neutro, cinematic = dramático)'
+        type: choice
+        required: false
+        default: 'studio'
+        options:
+          - studio
+          - cinematic
+      camera_mode:
+        description: 'Modo de câmara (auto = enquadramento dinâmico)'
+        type: string
+        required: false
+        default: 'auto'
+      ground_enabled:
+        description: 'Activar chão com sombras'
+        type: choice
+        required: false
+        default: 'true'
+        options:
+          - 'true'
+          - 'false'
+      lighting_quality:
+        description: 'Qualidade de iluminação'
+        type: choice
+        required: false
+        default: 'medium'
+        options:
+          - medium
+          - low
 
 permissions:
   contents: read
@@ -80,12 +110,16 @@ jobs:
       # ── Validar parâmetros ────────────────────────────────────────────────
       - name: Validar parâmetros
         env:
-          RAW_ASSET_ID: ${{ inputs.asset_id }}
-          RAW_ANIM:     ${{ inputs.animation_name }}
-          RAW_FPS:      ${{ inputs.fps }}
-          RAW_FRAMES:   ${{ inputs.max_frames }}
-          RAW_RES:      ${{ inputs.resolution }}
-          RAW_RUN_ID:   ${{ inputs.source_run_id }}
+          RAW_ASSET_ID:    ${{ inputs.asset_id }}
+          RAW_ANIM:        ${{ inputs.animation_name }}
+          RAW_FPS:         ${{ inputs.fps }}
+          RAW_FRAMES:      ${{ inputs.max_frames }}
+          RAW_RES:         ${{ inputs.resolution }}
+          RAW_RUN_ID:      ${{ inputs.source_run_id }}
+          RAW_STYLE:       ${{ inputs.visual_style }}
+          RAW_CAM:         ${{ inputs.camera_mode }}
+          RAW_GROUND:      ${{ inputs.ground_enabled }}
+          RAW_QUALITY:     ${{ inputs.lighting_quality }}
         run: |
           python3 - <<'PY'
           import os, re, sys
@@ -116,9 +150,22 @@ jobs:
           if not rid.isdigit():
               abort(f"source_run_id inválido: {rid!r}")
 
+          style   = os.environ.get("RAW_STYLE",   "studio").strip()
+          cam     = os.environ.get("RAW_CAM",     "auto").strip()
+          ground  = os.environ.get("RAW_GROUND",  "true").strip()
+          quality = os.environ.get("RAW_QUALITY", "medium").strip()
+
+          if style   not in ("studio", "cinematic"):  style   = "studio"
+          if quality not in ("low", "medium"):        quality = "medium"
+          if ground  not in ("true", "false"):        ground  = "true"
+
           with open(os.environ["GITHUB_ENV"], "a") as f:
-              f.write(f"ASSET_ID={aid}\nANIM_NAME={anim}\nFPS={fps}\n"
-                      f"MAX_FRAMES={frames}\nRESOLUTION={res}\nSOURCE_RUN_ID={rid}\n")
+              f.write(
+                  f"ASSET_ID={aid}\nANIM_NAME={anim}\nFPS={fps}\n"
+                  f"MAX_FRAMES={frames}\nRESOLUTION={res}\nSOURCE_RUN_ID={rid}\n"
+                  f"VISUAL_STYLE={style}\nCAMERA_MODE={cam}\n"
+                  f"GROUND_ENABLED={ground}\nLIGHTING_QUALITY={quality}\n"
+              )
           PY
 
       # ── Tentar reutilizar artefacto anterior ──────────────────────────────
@@ -227,8 +274,6 @@ jobs:
           echo "BLENDER_BIN=$(pwd)/blender_bin/blender" >> "$GITHUB_ENV"
 
       # ── Instalar dependências de display virtual (EGL / OpenGL / Xvfb) ───
-      # Ubuntu 24.04: libgles2-mesa foi removido, o pacote correcto é libgles2.
-      # Usamos || true por pacote para ser robusto a variações de runner.
       - name: Instalar dependências de display virtual
         run: |
           sudo apt-get update -qq
@@ -255,15 +300,19 @@ jobs:
             --background \
             --python library/tools/animate_character.py \
             -- \
-            --glb "$GLB_PATH" \
-            --animation "$ANIM_NAME" \
-            --fps "$FPS" \
-            --max-frames "$MAX_FRAMES" \
-            --resolution "$RESOLUTION" \
-            --frames-dir "$FRAMES_DIR" \
-            --preview "$PREVIEW" \
-            --report "$REPORT" \
-            --asset-id "$ASSET_ID"
+            --glb            "$GLB_PATH" \
+            --animation      "$ANIM_NAME" \
+            --fps            "$FPS" \
+            --max-frames     "$MAX_FRAMES" \
+            --resolution     "$RESOLUTION" \
+            --frames-dir     "$FRAMES_DIR" \
+            --preview        "$PREVIEW" \
+            --report         "$REPORT" \
+            --asset-id       "$ASSET_ID" \
+            --visual-style   "$VISUAL_STYLE" \
+            --camera-mode    "$CAMERA_MODE" \
+            --ground-enabled "$GROUND_ENABLED" \
+            --lighting-quality "$LIGHTING_QUALITY"
 
       # ── Verificar frames ──────────────────────────────────────────────────
       - name: Verificar frames renderizados
@@ -287,7 +336,6 @@ jobs:
       - name: Gerar MP4 com FFmpeg
         run: |
           set -euo pipefail
-          # Os frames estão nomeados frame_0000.png, frame_0001.png, ...
           ffmpeg -y \
             -framerate "$FPS" \
             -i "$FRAMES_DIR/frame_%04d.png" \
@@ -326,7 +374,6 @@ jobs:
           fmt  = info.get("format", {})
           streams = info.get("streams", [])
 
-          # Encontrar stream de vídeo
           vid_stream = next((s for s in streams if s.get("codec_type") == "video"), None)
           if vid_stream is None:
               print("ERRO: nenhuma stream de vídeo encontrada.", file=sys.stderr)
@@ -345,7 +392,6 @@ jobs:
           print(f"  duração:    {duration_s:.2f}s")
           print(f"  frames:     {nb_frames}")
 
-          # Actualizar o relatório
           try:
               rep = json.loads(open(report_path, encoding="utf-8").read())
               rep["ffmpeg_success"]        = True
@@ -358,7 +404,6 @@ jobs:
           except Exception as e:
               print(f"Aviso: não foi possível actualizar o relatório: {e}")
 
-          # Critérios de aprovação
           errors = []
           if duration_s < 0.1:
               errors.append(f"duração muito curta: {duration_s:.2f}s")
@@ -400,20 +445,26 @@ jobs:
               check = lambda b: "✅" if b else "❌"
               lines = [
                   f"## Animação 3D: `{r['asset_id']}`",
-                  f"**Blender:** {r.get('blender_version', '?')}  |  "
-                  f"**Animação:** `{r.get('animation_name_used') or r.get('animation_name_requested')}`",
+                  f"**Blender:** {r.get('blender_version','?')}  |  "
+                  f"**Animação:** `{r.get('animation_name_used') or r.get('animation_name_requested')}`  |  "
+                  f"**Estilo:** `{r.get('visual_style','?')}`",
                   "",
                   "| Etapa | Resultado |",
                   "|---|---|",
                   f"| Importação GLB       | {check(r['import_success'])} |",
                   f"| Animação encontrada  | {check(r['animation_found'])} `{r.get('animation_name_used','')}` |",
                   f"| Animação aplicada    | {check(r['animation_applied'])} |",
-                  f"| Movimento confirmado | {check(r['movement_confirmed'])} {r['bones_moved']} osso(s) moveram-se |",
+                  f"| Movimento confirmado | {check(r['movement_confirmed'])} {r['bones_moved']} osso(s) |",
+                  f"| Câmara criada        | {check(r.get('camera_created', False))} |",
+                  f"| Enquadramento ok     | {check(r.get('framing_verified', False))} ({r.get('framing_frames_sampled',0)} frames amostrados) |",
+                  f"| Luzes criadas        | {check(r.get('lights_created',0) > 0)} {r.get('lights_created',0)} luzes |",
+                  f"| Chão criado          | {check(r.get('ground_created', False))} |",
                   f"| Frames renderizados  | {check(r['frames_rendered'] > 0)} {r['frames_rendered']}/{r['frames_requested']} |",
+                  f"| Tempo de render      | {r.get('render_time_s','?')}s |",
                   f"| Preview PNG          | {check(r['preview_success'])} |",
                   f"| FFmpeg MP4           | {check(r.get('ffmpeg_success', False))} |",
                   f"| Vídeo válido         | {check(bool(r.get('video_frames_detected')))} "
-                  f"{r.get('video_duration_s', '?'):.1f}s, {r.get('video_frames_detected', '?')} frames |"
+                  f"{r.get('video_duration_s','?'):.1f}s, {r.get('video_frames_detected','?')} frames |"
                   if isinstance(r.get('video_duration_s'), (int, float))
                   else f"| Vídeo válido         | — |",
               ]
