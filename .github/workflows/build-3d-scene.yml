@@ -1,0 +1,451 @@
+name: Construir Cena 3D (Fase 5)
+
+# Pipeline completo da Fase 5:
+#   1. Descarregar assets de ambiente (KayKit City Builder ou Dungeon)
+#   2. Descarregar personagem (kaykit_adv_knight)
+#   3. Montar cena no Blender com build_scene.py
+#   4. Renderizar PNG e/ou MP4
+#   5. Exportar GLB (opcional)
+#
+# NÃO substitui: library-manager.yml, validate-3d-assets.yml, animate-3d-character.yml
+#
+# Executar pelo telemóvel:
+#   Actions → "Construir Cena 3D (Fase 5)" → Run workflow
+
+on:
+  workflow_dispatch:
+    inputs:
+      scene_preset:
+        description: 'Preset de cena (ficheiro em library/presets/)'
+        type: choice
+        required: true
+        default: 'knight_solo_test'
+        options:
+          - knight_solo_test
+          - knight_urban_test
+      render_preview:
+        description: 'Renderizar imagem PNG de prévia'
+        type: choice
+        required: false
+        default: 'true'
+        options:
+          - 'true'
+          - 'false'
+      render_animation:
+        description: 'Renderizar animação e gerar MP4'
+        type: choice
+        required: false
+        default: 'true'
+        options:
+          - 'true'
+          - 'false'
+      export_glb:
+        description: 'Exportar cena para GLB reutilizável'
+        type: choice
+        required: false
+        default: 'false'
+        options:
+          - 'true'
+          - 'false'
+      resolution:
+        description: 'Resolução (px, quadrada)'
+        type: choice
+        required: false
+        default: '640'
+        options:
+          - '320'
+          - '480'
+          - '640'
+      max_frames:
+        description: 'Máximo de frames a renderizar (1-72)'
+        type: string
+        required: false
+        default: '26'
+
+permissions:
+  contents: read
+  actions: read
+
+concurrency:
+  group: build-3d-scene-${{ inputs.scene_preset }}
+  cancel-in-progress: true
+
+jobs:
+  build_scene:
+    name: Cena — ${{ inputs.scene_preset }}
+    runs-on: ubuntu-24.04
+    timeout-minutes: 70
+
+    steps:
+      - uses: actions/checkout@v4
+
+      # ── Testes de unidade ────────────────────────────────────────────────
+      - name: Testes automatizados
+        run: python3 -I -m unittest discover -s library/tests -v
+
+      # ── Validar parâmetros ───────────────────────────────────────────────
+      - name: Validar parâmetros de entrada
+        env:
+          RAW_PRESET:   ${{ inputs.scene_preset }}
+          RAW_FRAMES:   ${{ inputs.max_frames }}
+          RAW_RES:      ${{ inputs.resolution }}
+          RAW_PREVIEW:  ${{ inputs.render_preview }}
+          RAW_ANIM:     ${{ inputs.render_animation }}
+          RAW_GLB:      ${{ inputs.export_glb }}
+        run: |
+          python3 - <<'PY'
+          import os, re, sys, json, pathlib
+
+          def abort(msg):
+              print(f"ERRO: {msg}", file=sys.stderr)
+              sys.exit(1)
+
+          preset = os.environ["RAW_PRESET"].strip()
+          allowed_presets = ["knight_solo_test", "knight_urban_test"]
+          if preset not in allowed_presets:
+              abort(f"scene_preset inválido: {preset!r}. Permitidos: {allowed_presets}")
+
+          frames = os.environ["RAW_FRAMES"].strip()
+          if not frames.isdigit() or not (1 <= int(frames) <= 72):
+              abort(f"max_frames inválido: {frames!r} (deve ser 1-72)")
+
+          res = os.environ["RAW_RES"].strip()
+          if res not in ("320", "480", "640"):
+              abort(f"resolution inválido: {res!r}")
+
+          preview = os.environ["RAW_PREVIEW"].strip()
+          anim    = os.environ["RAW_ANIM"].strip()
+          glb     = os.environ["RAW_GLB"].strip()
+
+          cfg_path = pathlib.Path(f"library/presets/{preset}.json")
+          if not cfg_path.is_file():
+              abort(f"ficheiro de preset não encontrado: {cfg_path}")
+
+          # Validar JSON
+          try:
+              cfg = json.loads(cfg_path.read_text(encoding="utf-8"))
+          except json.JSONDecodeError as e:
+              abort(f"JSON inválido: {e}")
+
+          flags_preview = "--render-preview" if preview == "true" else ""
+          flags_anim    = "--render-animation" if anim == "true" else ""
+          flags_glb     = "--export-glb" if glb == "true" else ""
+
+          with open(os.environ["GITHUB_ENV"], "a") as f:
+              f.write(
+                  f"SCENE_PRESET={preset}\n"
+                  f"SCENE_CFG=library/presets/{preset}.json\n"
+                  f"MAX_FRAMES={frames}\n"
+                  f"RESOLUTION={res}\n"
+                  f"FLAG_PREVIEW={flags_preview}\n"
+                  f"FLAG_ANIM={flags_anim}\n"
+                  f"FLAG_GLB={flags_glb}\n"
+              )
+          print(f"✅ Parâmetros validados: preset={preset}  frames={frames}  res={res}")
+          PY
+
+      # ── Descarregar assets de ambiente ────────────────────────────────────
+      - name: Descarregar assets de ambiente
+        run: |
+          set -euo pipefail
+          python3 -I library/tools/organize_assets.py
+          python3 -I library/tools/check_licenses.py --category environments
+
+          # Ler quais assets de ambiente a cena precisa
+          SCENE_ASSETS=$(python3 - <<'PY'
+          import json, sys, pathlib
+          cfg = json.loads(pathlib.Path("$SCENE_CFG").read_text())
+          ids = [a["asset_id"] for a in cfg.get("environment", {}).get("assets", [])]
+          print(" ".join(ids))
+          PY
+          )
+
+          if [ -z "$SCENE_ASSETS" ]; then
+            echo "ℹ️  Sem assets de ambiente nesta cena (solo test)."
+          else
+            for ASSET_ID in $SCENE_ASSETS; do
+              echo "⬇️  A descarregar asset de ambiente: $ASSET_ID"
+              python3 -I library/tools/download_assets.py \
+                  --mode download \
+                  --category environments \
+                  --asset-id "$ASSET_ID" \
+                  --max-downloads 1 \
+                  --max-total-mb 150 \
+                  --max-files-per-asset 100 || {
+                echo "⚠️  Download de '$ASSET_ID' falhou — a continuar sem este asset."
+              }
+            done
+          fi
+
+      # ── Descarregar personagem ────────────────────────────────────────────
+      - name: Descarregar personagem kaykit_adv_knight
+        run: |
+          set -euo pipefail
+          python3 -I library/tools/check_licenses.py --category characters
+
+          # Verificar se já existe
+          GLB=$(find "library/assets/characters/kaykit_adv_knight" \
+                     -name "*.glb" -o -name "*.gltf" 2>/dev/null | head -1)
+          if [ -n "$GLB" ]; then
+            echo "✅ kaykit_adv_knight já disponível: $GLB"
+          else
+            echo "⬇️  A descarregar kaykit_adv_knight…"
+            python3 -I library/tools/download_assets.py \
+                --mode download \
+                --category characters \
+                --asset-id kaykit_adv_knight \
+                --max-downloads 1 \
+                --max-total-mb 120
+          fi
+
+      # ── Localizar GLBs e confirmar ────────────────────────────────────────
+      - name: Confirmar assets disponíveis
+        run: |
+          python3 - <<'PY'
+          import json, pathlib, sys
+
+          cfg_path = pathlib.Path("$SCENE_CFG")
+          cfg = json.loads(cfg_path.read_text())
+
+          assets_needed = (
+              [a["asset_id"] for a in cfg.get("environment",{}).get("assets",[])] +
+              [c["asset_id"] for c in cfg.get("characters",[])]
+          )
+          lib_root = pathlib.Path("library")
+          found = []
+          missing = []
+
+          for aid in assets_needed:
+              glb = None
+              for cat_dir in sorted((lib_root/"assets").iterdir()):
+                  if not cat_dir.is_dir():
+                      continue
+                  adir = cat_dir / aid
+                  if not adir.is_dir():
+                      continue
+                  for ext in (".glb", ".gltf"):
+                      matches = sorted(adir.rglob(f"*{ext}"))
+                      if matches:
+                          glb = matches[0]
+                          break
+                  if glb:
+                      break
+              if glb:
+                  print(f"  ✅ {aid}: {glb}")
+                  found.append(aid)
+              else:
+                  print(f"  ⚠️  {aid}: NÃO ENCONTRADO (cena pode ter ambiente de fallback)")
+                  missing.append(aid)
+
+          print(f"\nAssets encontrados: {len(found)}/{len(assets_needed)}")
+          # Só falhar se a personagem estiver em falta (o ambiente é opcional)
+          chars_missing = [a for a in missing
+                           if "knight" in a.lower() or "char" in a.lower()]
+          if chars_missing:
+              print(f"ERRO: personagens em falta: {chars_missing}", file=sys.stderr)
+              sys.exit(1)
+          PY
+
+      # ── Instalar Blender ──────────────────────────────────────────────────
+      - name: Ler versão do Blender
+        id: blender_cfg
+        run: |
+          VERSION=$(python3 -c "import json;c=json.load(open('config/blender.json'));print(c['blender_version'])")
+          SERIES=$(python3  -c "import json;c=json.load(open('config/blender.json'));print(c['blender_series'])")
+          FNAME=$(python3   -c "import json;c=json.load(open('config/blender.json'));print(c['linux_x64_filename'])")
+          CHKSUM=$(python3  -c "import json;c=json.load(open('config/blender.json'));print(c['checksum_filename'])")
+          echo "version=$VERSION"   >> "$GITHUB_OUTPUT"
+          echo "series=$SERIES"     >> "$GITHUB_OUTPUT"
+          echo "filename=$FNAME"    >> "$GITHUB_OUTPUT"
+          echo "checksum=$CHKSUM"   >> "$GITHUB_OUTPUT"
+
+      - name: Cache do Blender ${{ steps.blender_cfg.outputs.version }}
+        id: cache_blender
+        uses: actions/cache@v4
+        with:
+          path: blender_bin
+          key: blender-${{ steps.blender_cfg.outputs.version }}-linux-x64
+
+      - name: Descarregar Blender ${{ steps.blender_cfg.outputs.version }}
+        if: steps.cache_blender.outputs.cache-hit != 'true'
+        run: |
+          set -euo pipefail
+          BASE="https://download.blender.org/release/Blender${{ steps.blender_cfg.outputs.series }}"
+          FNAME="${{ steps.blender_cfg.outputs.filename }}"
+          CHKSUM="${{ steps.blender_cfg.outputs.checksum }}"
+          echo "A descarregar $BASE/$FNAME …"
+          curl -fL --retry 3 --retry-delay 5 -o "$FNAME" "$BASE/$FNAME"
+          if curl -fL --retry 3 --retry-delay 5 -o "$CHKSUM" "$BASE/$CHKSUM" 2>/dev/null; then
+            EXPECTED=$(grep "$FNAME" "$CHKSUM" | awk '{print $1}')
+            if [ -n "$EXPECTED" ]; then
+              echo "$EXPECTED  $FNAME" | sha256sum -c -
+              echo "✅ Checksum verificado."
+            fi
+          fi
+          mkdir -p blender_bin
+          tar -xJf "$FNAME" -C blender_bin --strip-components=1
+          rm -f "$FNAME" "$CHKSUM"
+
+      - name: Confirmar Blender
+        run: |
+          ./blender_bin/blender --version
+          echo "BLENDER_BIN=$(pwd)/blender_bin/blender" >> "$GITHUB_ENV"
+
+      # ── Dependências de display ───────────────────────────────────────────
+      - name: Instalar dependências de display virtual
+        run: |
+          sudo apt-get update -qq
+          sudo apt-get install -y --no-install-recommends \
+            xvfb libxxf86vm1 libxfixes3 libxi6 libxrender1
+          sudo apt-get install -y --no-install-recommends libgles2 || \
+          sudo apt-get install -y --no-install-recommends libgles2-mesa || true
+          sudo apt-get install -y --no-install-recommends libgl1-mesa-dri || \
+          sudo apt-get install -y --no-install-recommends libgl1 || true
+
+      # ── Instalar FFmpeg ───────────────────────────────────────────────────
+      - name: Instalar FFmpeg
+        run: |
+          sudo apt-get install -y --no-install-recommends ffmpeg
+          ffmpeg -version | head -1
+
+      # ── Preparar diretórios ───────────────────────────────────────────────
+      - name: Preparar diretórios de saída
+        run: |
+          mkdir -p scene-output scene-results
+          echo "OUTPUT_DIR=$(pwd)/scene-output"     >> "$GITHUB_ENV"
+          echo "REPORT=$(pwd)/scene-results/scene-report.json" >> "$GITHUB_ENV"
+          echo "LIBRARY_ROOT=$(pwd)/library"        >> "$GITHUB_ENV"
+
+      # ── Montar cena e renderizar (Blender + Xvfb) ────────────────────────
+      - name: Montar cena e renderizar com Blender
+        run: |
+          set -euo pipefail
+          xvfb-run -a "$BLENDER_BIN" \
+            --background \
+            --python library/tools/build_scene.py \
+            -- \
+            --scene-config  "$SCENE_CFG" \
+            --output-dir    "$OUTPUT_DIR" \
+            --report        "$REPORT" \
+            --library-root  "$LIBRARY_ROOT" \
+            --resolution    "$RESOLUTION" \
+            --max-frames    "$MAX_FRAMES" \
+            $FLAG_PREVIEW \
+            $FLAG_ANIM \
+            $FLAG_GLB
+
+      # ── Verificar resultados ──────────────────────────────────────────────
+      - name: Verificar ficheiros produzidos
+        run: |
+          echo "=== Ficheiros em scene-output/ ==="
+          find scene-output/ -type f | sort || echo "(vazio)"
+
+          # Verificar PNG se pedido
+          if [ "$FLAG_PREVIEW" = "--render-preview" ]; then
+            PNG_COUNT=$(find scene-output/ -name "*.png" | wc -l)
+            echo "PNGs encontrados: $PNG_COUNT"
+            if [ "$PNG_COUNT" -eq 0 ]; then
+              echo "ERRO: nenhum PNG produzido" >&2
+              cat "$REPORT" 2>/dev/null || true
+              exit 1
+            fi
+          fi
+
+          # Verificar MP4 se pedido
+          if [ "$FLAG_ANIM" = "--render-animation" ]; then
+            MP4=$(find scene-output/ -name "*.mp4" | head -1)
+            if [ -n "$MP4" ]; then
+              echo "✅ MP4: $(du -sh "$MP4" | cut -f1)  $MP4"
+            else
+              echo "ERRO: nenhum MP4 produzido" >&2
+              cat "$REPORT" 2>/dev/null || true
+              exit 1
+            fi
+          fi
+
+          # Verificar GLB se pedido
+          if [ "$FLAG_GLB" = "--export-glb" ]; then
+            GLB=$(find scene-output/ -name "*.glb" | head -1)
+            if [ -n "$GLB" ]; then
+              echo "✅ GLB: $(du -sh "$GLB" | cut -f1)  $GLB"
+            else
+              echo "⚠️  GLB pedido mas não encontrado — ver relatório"
+            fi
+          fi
+
+      # ── Copiar resultados para scene-results/ ────────────────────────────
+      - name: Preparar artefactos finais
+        if: always()
+        run: |
+          cp -r scene-output/* scene-results/ 2>/dev/null || true
+          echo "=== Artefactos finais ==="
+          ls -lh scene-results/ || true
+
+      # ── Escrever sumário ──────────────────────────────────────────────────
+      - name: Escrever sumário no GitHub
+        if: always()
+        run: |
+          python3 - <<'PY'
+          import json, os, pathlib
+
+          rp           = os.environ.get("REPORT", "")
+          summary_path = os.environ.get("GITHUB_STEP_SUMMARY", "")
+          preset       = os.environ.get("SCENE_PRESET", "?")
+
+          p = pathlib.Path(rp) if rp else None
+          if not p or not p.is_file():
+              txt = f"## Cena 3D: {preset}\n\n❌ Relatório não gerado.\n"
+          else:
+              r = json.loads(p.read_text(encoding="utf-8"))
+              chk = lambda b: "✅" if b else "❌"
+              lines = [
+                  f"## Cena 3D: `{r['scene_name']}`",
+                  f"**Blender:** {r.get('blender_version','?')}  |  "
+                  f"**Câmara:** `{r.get('camera_mode','?')}`  |  "
+                  f"**Iluminação:** `{r.get('lighting_preset','?')}`",
+                  "",
+                  "| Etapa | Resultado |",
+                  "|---|---|",
+                  f"| Assets de ambiente importados | {chk(r['scene_assets_imported'] > 0)} {r['scene_assets_imported']} |",
+                  f"| Personagem importada  | {chk(r['character_imported'])} |",
+                  f"| Animação aplicada     | {chk(r['character_animated'])} |",
+                  f"| Câmara criada         | {chk(r['camera_created'])} |",
+                  f"| Enquadramento OK      | {chk(r['framing_success'])} |",
+                  f"| Iluminação criada     | {chk(r['lights_created'] > 0)} {r['lights_created']} luz(es) |",
+                  f"| Chão criado           | {chk(r['ground_created'])} |",
+                  f"| Preview PNG           | {chk(r['preview_success'])} |",
+              ]
+              if r.get("frames_requested"):
+                  lines.append(f"| Frames renderizados   | {chk(r['frames_rendered']>0)} {r['frames_rendered']}/{r['frames_requested']} |")
+              if r.get("video_path"):
+                  lines.append(f"| MP4 gerado            | ✅ |")
+              if r.get("glb_exported"):
+                  lines.append(f"| GLB exportado         | ✅ reimportável: {chk(r.get('glb_importable',False))} |")
+              if r.get("render_time_s"):
+                  lines.append(f"| Tempo de render       | {r['render_time_s']}s |")
+              if r.get("errors"):
+                  lines += ["", "**❌ Erros:**"]
+                  for e in r["errors"]:
+                      lines.append(f"- `{str(e)[:200]}`")
+              if r.get("warnings"):
+                  lines += ["", "**⚠️ Avisos:**"]
+                  for w in r["warnings"]:
+                      lines.append(f"- {w}")
+              txt = "\n".join(lines) + "\n"
+
+          print(txt)
+          if summary_path:
+              with open(summary_path, "a", encoding="utf-8") as f:
+                  f.write(txt)
+          PY
+
+      # ── Disponibilizar artefactos ─────────────────────────────────────────
+      - name: Disponibilizar artefactos da cena
+        if: always()
+        uses: actions/upload-artifact@v4
+        with:
+          name: scene-${{ inputs.scene_preset }}-${{ github.run_id }}
+          path: |
+            scene-results/
+          if-no-files-found: warn
+          retention-days: 14
