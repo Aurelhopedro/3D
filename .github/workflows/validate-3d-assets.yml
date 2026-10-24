@@ -1,0 +1,297 @@
+name: Validar Modelo 3D (Blender)
+
+# Valida um modelo GLB da biblioteca usando Blender em modo background.
+# Não substitui o library-manager.yml.
+#
+# Executar pelo telemóvel:
+#   Actions → "Validar Modelo 3D (Blender)" → Run workflow
+#
+# O workflow tenta reutilizar um artefacto de uma execução anterior do
+# library-manager quando se fornece o run_id. Se não houver artefacto
+# disponível (ou o run_id for 0), faz o download automaticamente.
+
+on:
+  workflow_dispatch:
+    inputs:
+      asset_id:
+        description: 'ID do recurso a validar (ex: kaykit_adv_knight)'
+        type: string
+        required: true
+        default: 'kaykit_adv_knight'
+      category:
+        description: 'Categoria do recurso'
+        type: choice
+        required: true
+        default: characters
+        options:
+          - characters
+          - vehicles
+          - environments
+          - clothing
+          - furniture
+          - nature
+          - materials
+          - lighting
+          - architecture
+          - hair
+          - animals
+          - animations
+      source_run_id:
+        description: 'Run ID do library-manager com o artefacto (0 = fazer novo download)'
+        type: string
+        required: false
+        default: '0'
+      generate_render:
+        description: 'Gerar imagem PNG do modelo?'
+        type: boolean
+        required: false
+        default: true
+
+permissions:
+  contents: read
+  actions: read
+
+concurrency:
+  group: validate-3d-${{ inputs.asset_id }}
+  cancel-in-progress: true
+
+jobs:
+  validate:
+    name: Validar ${{ inputs.asset_id }}
+    runs-on: ubuntu-24.04
+    timeout-minutes: 45
+
+    steps:
+      - uses: actions/checkout@v4
+
+      # ── Testes de unidade (guarda de segurança obrigatória) ──────────────
+      - name: Testes automatizados
+        run: python3 -I -m unittest discover -s library/tests -v
+
+      # ── Validar parâmetros ───────────────────────────────────────────────
+      - name: Validar parâmetros
+        env:
+          RAW_ASSET_ID: ${{ inputs.asset_id }}
+          RAW_RUN_ID: ${{ inputs.source_run_id }}
+        run: |
+          python3 - <<'PY'
+          import os, re, sys
+          aid = os.environ["RAW_ASSET_ID"].strip()
+          if not re.fullmatch(r"[a-z0-9][a-z0-9_\-]{0,63}", aid):
+              sys.exit(f"asset_id inválido: {aid!r}")
+          rid = os.environ["RAW_RUN_ID"].strip()
+          if not rid.isdigit():
+              sys.exit(f"source_run_id inválido: {rid!r}")
+          with open(os.environ["GITHUB_ENV"], "a") as f:
+              f.write(f"ASSET_ID={aid}\nSOURCE_RUN_ID={rid}\n")
+          PY
+
+      # ── Tentar reutilizar artefacto de execução anterior ────────────────
+      - name: Tentar reutilizar artefacto (run_id=${{ inputs.source_run_id }})
+        id: reuse_artifact
+        if: ${{ inputs.source_run_id != '0' }}
+        continue-on-error: true
+        uses: actions/download-artifact@v4
+        with:
+          run-id: ${{ inputs.source_run_id }}
+          name: library-output-${{ inputs.source_run_id }}
+          path: library/assets
+          github-token: ${{ secrets.GITHUB_TOKEN }}
+
+      - name: Verificar se o artefacto foi obtido
+        id: check_artifact
+        run: |
+          GLB=$(find library/assets/${{ inputs.category }}/${{ inputs.asset_id }} \
+                     -name "*.glb" -o -name "*.gltf" 2>/dev/null | head -1)
+          if [ -n "$GLB" ]; then
+            echo "ARTIFACT_GLB=$GLB" >> "$GITHUB_ENV"
+            echo "artifact_found=true" >> "$GITHUB_OUTPUT"
+            echo "✅ Artefacto reutilizado: $GLB"
+          else
+            echo "artifact_found=false" >> "$GITHUB_OUTPUT"
+            echo "⚠️ Artefacto não encontrado — será feito novo download."
+          fi
+
+      # ── Fazer novo download se necessário ───────────────────────────────
+      - name: Download do recurso (se necessário)
+        if: steps.check_artifact.outputs.artifact_found != 'true'
+        run: |
+          set -euo pipefail
+          python3 -I library/tools/organize_assets.py
+          python3 -I library/tools/check_licenses.py --category "${{ inputs.category }}"
+          python3 -I library/tools/download_assets.py \
+              --mode download \
+              --category "${{ inputs.category }}" \
+              --asset-id "$ASSET_ID" \
+              --max-downloads 1 \
+              --max-total-mb 100
+
+      - name: Localizar GLB após download
+        if: steps.check_artifact.outputs.artifact_found != 'true'
+        run: |
+          GLB=$(find library/assets/${{ inputs.category }}/${{ inputs.asset_id }} \
+                     -name "*.glb" -o -name "*.gltf" 2>/dev/null | head -1)
+          if [ -z "$GLB" ]; then
+            echo "ERRO: nenhum GLB/GLTF encontrado após o download." >&2
+            echo "Conteúdo da pasta:"
+            ls -la "library/assets/${{ inputs.category }}/${{ inputs.asset_id }}/" 2>/dev/null || true
+            exit 1
+          fi
+          echo "ARTIFACT_GLB=$GLB" >> "$GITHUB_ENV"
+          echo "✅ GLB localizado: $GLB"
+
+      # ── Validação de integridade (python) ────────────────────────────────
+      - name: Teste A+B — Integridade dos ficheiros
+        run: |
+          python3 -I library/tools/validate_assets.py \
+              --category "${{ inputs.category }}"
+
+      # ── Instalar Blender ─────────────────────────────────────────────────
+      - name: Instalar Blender
+        run: |
+          set -euo pipefail
+          sudo apt-get update -qq
+          # Dependências necessárias para o Blender headless
+          sudo apt-get install -y --no-install-recommends \
+              libgles2-mesa libgl1-mesa-dri \
+              libxxf86vm1 libxfixes3 libxi6 libxrender1 \
+              xvfb \
+              2>/dev/null || true
+
+          # Blender via snap (versão estável mais recente disponível)
+          sudo snap install blender --classic 2>/dev/null || true
+
+          # Fallback: instalar via apt se o snap falhar
+          if ! command -v blender &>/dev/null; then
+            sudo apt-get install -y --no-install-recommends blender 2>/dev/null || true
+          fi
+
+          if ! command -v blender &>/dev/null; then
+            echo "ERRO: Blender não pôde ser instalado." >&2
+            exit 1
+          fi
+
+          blender --version
+          echo "BLENDER_BIN=$(command -v blender)" >> "$GITHUB_ENV"
+
+      # ── Preparar caminhos de saída ───────────────────────────────────────
+      - name: Preparar directório de resultados
+        run: |
+          mkdir -p validation-results
+          echo "REPORT_PATH=validation-results/validation-report.json" >> "$GITHUB_ENV"
+          echo "RENDER_PATH=validation-results/render-${{ inputs.asset_id }}.png" >> "$GITHUB_ENV"
+
+      # ── Teste C — Importação no Blender ──────────────────────────────────
+      # ── Teste D — Geometria ───────────────────────────────────────────────
+      # ── Teste E — Rigging ─────────────────────────────────────────────────
+      # ── Teste F — Animações ───────────────────────────────────────────────
+      # ── Teste G — Renderização ────────────────────────────────────────────
+      - name: Testes C-G — Blender (importação, geometria, rigging, animações, render)
+        run: |
+          set -euo pipefail
+          RENDER_ARG=""
+          if [ "${{ inputs.generate_render }}" = "true" ]; then
+            RENDER_ARG="--render $RENDER_PATH"
+          fi
+
+          # Usar Xvfb para simular display (necessário mesmo em modo background
+          # nalgumas versões do Blender para o motor EEVEE)
+          xvfb-run -a "$BLENDER_BIN" \
+              --background \
+              --python library/tools/validate_blender.py \
+              -- \
+              --glb "$ARTIFACT_GLB" \
+              --report "$REPORT_PATH" \
+              --asset-id "$ASSET_ID" \
+              $RENDER_ARG \
+          || true
+          # "|| true" para não falhar o step se o script retornar !=0;
+          # o resultado é avaliado abaixo a partir do JSON.
+
+      # ── Avaliar resultado ────────────────────────────────────────────────
+      - name: Avaliar resultado e escrever sumário
+        run: |
+          python3 - <<'PY'
+          import json, os, pathlib, sys
+
+          rpath = os.environ.get("REPORT_PATH", "validation-results/validation-report.json")
+          p = pathlib.Path(rpath)
+          if not p.is_file():
+              print("ERRO: relatório JSON não gerado — o Blender pode ter falhado a iniciar.")
+              sys.exit(1)
+
+          r = json.loads(p.read_text(encoding="utf-8"))
+
+          summary = os.environ.get("GITHUB_STEP_SUMMARY", "")
+          lines = [
+              f"## Validação: `{r['asset_id']}`",
+              "",
+              f"**Blender:** {r.get('blender_version', 'desconhecido')}",
+              "",
+              "| Teste | Resultado |",
+              "|---|---|",
+              f"| C — Importação GLB | {'✅ OK' if r['import_success'] else '❌ FALHOU'} |",
+              f"| D — Geometria | {'✅ ' + str(r['mesh_count']) + ' malhas, ' + str(r['vertex_count']) + ' vértices, ' + str(r['polygon_count']) + ' polígonos' if r['mesh_count'] > 0 else '⚠️ sem malhas'} |",
+              f"| — Materiais | {r['material_count']} materiais, {r['texture_count']} texturas |",
+              f"| E — Armature | {'✅ ' + str(r['armature_count']) + ' armature(s), ' + str(r['bone_count']) + ' ossos' if r['armature_found'] else '— não encontrada'} |",
+              f"| E — Rigging confirmado | {'✅ SIM (vertex groups + modificador)' if r['rigging_confirmed'] else '❌ NÃO (só armature não chega)'} |",
+              f"| F — Animações | {'✅ ' + str(r['animation_count']) + ' acções' if r['animation_count'] > 0 else '— nenhuma'} |",
+              f"| F — Animação funcional | {'✅ osso moveu-se entre frames' if r['animation_functional'] else ('⚠️ não verificado' if r['animation_count'] == 0 else '❌ osso não se moveu')} |",
+              f"| G — Render PNG | {'✅ ' + str(r.get('render_path', '')) if r['render_success'] else '— não efectuado ou falhou'} |",
+          ]
+
+          if r.get("errors"):
+              lines += ["", "**Erros:**"]
+              for e in r["errors"]:
+                  lines.append(f"- `{e[:200]}`")
+
+          if r.get("warnings"):
+              lines += ["", "**Avisos:**"]
+              for w in r["warnings"]:
+                  lines.append(f"- {w}")
+
+          if r.get("animation_names"):
+              names = r["animation_names"][:10]
+              lines += ["", f"**Animações ({len(r['animation_names'])} total, primeiras {len(names)}):**"]
+              for n in names:
+                  lines.append(f"- {n}")
+
+          md = "\n".join(lines) + "\n"
+          print(md)
+
+          if summary:
+              with open(summary, "a", encoding="utf-8") as fh:
+                  fh.write(md)
+
+          # Falhar apenas se a importação falhou
+          if not r["import_success"]:
+              print("\n❌ IMPORTAÇÃO FALHOU — ver erros acima.", file=sys.stderr)
+              sys.exit(1)
+
+          print("\n✅ Importação bem-sucedida.")
+          if not r["rigging_confirmed"] and r["armature_found"]:
+              print("⚠️  Armature encontrada mas rigging NÃO confirmado (ver relatório).")
+          if not r["animation_functional"] and r["animation_count"] > 0:
+              print("⚠️  Animações presentes mas funcionalidade NÃO confirmada.")
+          PY
+
+      # ── Disponibilizar resultados ────────────────────────────────────────
+      - name: Disponibilizar artefactos de validação
+        if: always()
+        uses: actions/upload-artifact@v4
+        with:
+          name: validation-${{ inputs.asset_id }}-${{ github.run_id }}
+          path: |
+            validation-results/
+          if-no-files-found: warn
+          retention-days: 14
+
+      # ── Sumário de armazenamento ─────────────────────────────────────────
+      - name: Sumário de armazenamento
+        if: always()
+        run: |
+          echo "### Armazenamento" >> "$GITHUB_STEP_SUMMARY"
+          du -sh library/assets validation-results 2>/dev/null \
+            | sed 's/^/- /' >> "$GITHUB_STEP_SUMMARY" || true
+          echo "" >> "$GITHUB_STEP_SUMMARY"
+          echo "**GLB validado:** \`${ARTIFACT_GLB:-não encontrado}\`" >> "$GITHUB_STEP_SUMMARY"
