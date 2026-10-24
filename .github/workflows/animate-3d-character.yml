@@ -1,0 +1,434 @@
+name: Animar Personagem 3D (MP4)
+
+# Pipeline: download GLB → Blender renderiza frames → FFmpeg gera MP4.
+# Não substitui library-manager.yml, validate-3d-assets.yml nem blender.yml.
+#
+# Executar pelo telemóvel:
+#   Actions → "Animar Personagem 3D (MP4)" → Run workflow
+
+on:
+  workflow_dispatch:
+    inputs:
+      asset_id:
+        description: 'ID do recurso (ex: kaykit_adv_knight)'
+        type: string
+        required: true
+        default: 'kaykit_adv_knight'
+      category:
+        description: 'Categoria'
+        type: choice
+        required: true
+        default: characters
+        options:
+          - characters
+          - vehicles
+          - environments
+          - clothing
+          - furniture
+          - nature
+      animation_name:
+        description: 'Nome da animação (ex: 1H_Melee_Attack_Chop)'
+        type: string
+        required: true
+        default: '1H_Melee_Attack_Chop'
+      fps:
+        description: 'Frames por segundo do vídeo'
+        type: string
+        required: false
+        default: '24'
+      max_frames:
+        description: 'Máximo de frames a renderizar (1-72)'
+        type: string
+        required: false
+        default: '72'
+      resolution:
+        description: 'Resolução (px, quadrada)'
+        type: choice
+        required: false
+        default: '640'
+        options:
+          - '320'
+          - '480'
+          - '640'
+      source_run_id:
+        description: 'Run ID do library-manager com artefacto (0 = novo download)'
+        type: string
+        required: false
+        default: '0'
+
+permissions:
+  contents: read
+  actions: read
+
+concurrency:
+  group: animate-3d-${{ inputs.asset_id }}-${{ inputs.animation_name }}
+  cancel-in-progress: true
+
+jobs:
+  animate:
+    name: Animar ${{ inputs.asset_id }} — ${{ inputs.animation_name }}
+    runs-on: ubuntu-24.04
+    timeout-minutes: 55
+
+    steps:
+      - uses: actions/checkout@v4
+
+      # ── Testes de unidade (guarda de segurança) ───────────────────────────
+      - name: Testes automatizados
+        run: python3 -I -m unittest discover -s library/tests -v
+
+      # ── Validar parâmetros ────────────────────────────────────────────────
+      - name: Validar parâmetros
+        env:
+          RAW_ASSET_ID: ${{ inputs.asset_id }}
+          RAW_ANIM:     ${{ inputs.animation_name }}
+          RAW_FPS:      ${{ inputs.fps }}
+          RAW_FRAMES:   ${{ inputs.max_frames }}
+          RAW_RES:      ${{ inputs.resolution }}
+          RAW_RUN_ID:   ${{ inputs.source_run_id }}
+        run: |
+          python3 - <<'PY'
+          import os, re, sys
+          def abort(msg):
+              print(f"ERRO: {msg}", file=sys.stderr); sys.exit(1)
+
+          aid = os.environ["RAW_ASSET_ID"].strip()
+          if not re.fullmatch(r"[a-z0-9][a-z0-9_\-]{0,63}", aid):
+              abort(f"asset_id inválido: {aid!r}")
+
+          anim = os.environ["RAW_ANIM"].strip()
+          if not anim or len(anim) > 80:
+              abort(f"animation_name inválido: {anim!r}")
+
+          fps = os.environ["RAW_FPS"].strip()
+          if not fps.isdigit() or not (1 <= int(fps) <= 60):
+              abort(f"fps inválido: {fps!r}")
+
+          frames = os.environ["RAW_FRAMES"].strip()
+          if not frames.isdigit() or not (1 <= int(frames) <= 72):
+              abort(f"max_frames inválido: {frames!r}")
+
+          res = os.environ["RAW_RES"].strip()
+          if res not in ("320", "480", "640"):
+              abort(f"resolution inválido: {res!r}")
+
+          rid = os.environ["RAW_RUN_ID"].strip()
+          if not rid.isdigit():
+              abort(f"source_run_id inválido: {rid!r}")
+
+          with open(os.environ["GITHUB_ENV"], "a") as f:
+              f.write(f"ASSET_ID={aid}\nANIM_NAME={anim}\nFPS={fps}\n"
+                      f"MAX_FRAMES={frames}\nRESOLUTION={res}\nSOURCE_RUN_ID={rid}\n")
+          PY
+
+      # ── Tentar reutilizar artefacto anterior ──────────────────────────────
+      - name: Tentar reutilizar artefacto (run_id=${{ inputs.source_run_id }})
+        id: reuse
+        if: ${{ inputs.source_run_id != '0' }}
+        continue-on-error: true
+        uses: actions/download-artifact@v4
+        with:
+          run-id: ${{ inputs.source_run_id }}
+          name: library-output-${{ inputs.source_run_id }}
+          path: library/assets
+          github-token: ${{ secrets.GITHUB_TOKEN }}
+
+      - name: Verificar se o artefacto tem o GLB
+        id: check_glb
+        run: |
+          GLB=$(find "library/assets/${{ inputs.category }}/$ASSET_ID" \
+                     -name "*.glb" -o -name "*.gltf" 2>/dev/null | head -1)
+          if [ -n "$GLB" ]; then
+            echo "GLB_PATH=$GLB" >> "$GITHUB_ENV"
+            echo "glb_found=true" >> "$GITHUB_OUTPUT"
+            echo "✅ GLB disponível: $GLB"
+          else
+            echo "glb_found=false" >> "$GITHUB_OUTPUT"
+            echo "⚠️ GLB não encontrado — novo download."
+          fi
+
+      # ── Download automático se necessário ────────────────────────────────
+      - name: Download do recurso
+        if: steps.check_glb.outputs.glb_found != 'true'
+        run: |
+          set -euo pipefail
+          python3 -I library/tools/organize_assets.py
+          python3 -I library/tools/check_licenses.py --category "${{ inputs.category }}"
+          python3 -I library/tools/download_assets.py \
+              --mode download \
+              --category "${{ inputs.category }}" \
+              --asset-id "$ASSET_ID" \
+              --max-downloads 1 \
+              --max-total-mb 120
+
+      - name: Localizar GLB após download
+        if: steps.check_glb.outputs.glb_found != 'true'
+        run: |
+          GLB=$(find "library/assets/${{ inputs.category }}/$ASSET_ID" \
+                     -name "*.glb" -o -name "*.gltf" 2>/dev/null | head -1)
+          if [ -z "$GLB" ]; then
+            echo "ERRO: GLB não encontrado após download." >&2
+            ls -la "library/assets/${{ inputs.category }}/$ASSET_ID/" 2>/dev/null || true
+            exit 1
+          fi
+          echo "GLB_PATH=$GLB" >> "$GITHUB_ENV"
+          echo "✅ GLB após download: $GLB"
+
+      # ── Instalar Blender (versão oficial do config/blender.json) ─────────
+      - name: Ler versão do Blender
+        id: blender_cfg
+        run: |
+          VERSION=$(python3 -c "import json;c=json.load(open('config/blender.json'));print(c['blender_version'])")
+          SERIES=$(python3  -c "import json;c=json.load(open('config/blender.json'));print(c['blender_series'])")
+          FNAME=$(python3   -c "import json;c=json.load(open('config/blender.json'));print(c['linux_x64_filename'])")
+          CHKSUM=$(python3  -c "import json;c=json.load(open('config/blender.json'));print(c['checksum_filename'])")
+          echo "version=$VERSION"   >> "$GITHUB_OUTPUT"
+          echo "series=$SERIES"     >> "$GITHUB_OUTPUT"
+          echo "filename=$FNAME"    >> "$GITHUB_OUTPUT"
+          echo "checksum=$CHKSUM"   >> "$GITHUB_OUTPUT"
+
+      - name: Cache do Blender ${{ steps.blender_cfg.outputs.version }}
+        id: cache_blender
+        uses: actions/cache@v4
+        with:
+          path: blender_bin
+          key: blender-${{ steps.blender_cfg.outputs.version }}-linux-x64
+
+      - name: Descarregar Blender ${{ steps.blender_cfg.outputs.version }}
+        if: steps.cache_blender.outputs.cache-hit != 'true'
+        run: |
+          set -euo pipefail
+          BASE="https://download.blender.org/release/Blender${{ steps.blender_cfg.outputs.series }}"
+          FNAME="${{ steps.blender_cfg.outputs.filename }}"
+          CHKSUM="${{ steps.blender_cfg.outputs.checksum }}"
+
+          echo "A descarregar $BASE/$FNAME …"
+          curl -fL --retry 3 --retry-delay 5 -o "$FNAME" "$BASE/$FNAME"
+
+          if curl -fL --retry 3 --retry-delay 5 -o "$CHKSUM" "$BASE/$CHKSUM" 2>/dev/null; then
+            EXPECTED=$(grep "$FNAME" "$CHKSUM" | awk '{print $1}')
+            if [ -n "$EXPECTED" ]; then
+              echo "$EXPECTED  $FNAME" | sha256sum -c -
+              echo "✅ Checksum verificado."
+            else
+              echo "⚠️ Hash não encontrado no ficheiro de checksums; a continuar."
+            fi
+          else
+            echo "⚠️ Ficheiro de checksums indisponível; a continuar sem verificação."
+          fi
+
+          mkdir -p blender_bin
+          tar -xJf "$FNAME" -C blender_bin --strip-components=1
+          rm -f "$FNAME" "$CHKSUM"
+
+      - name: Confirmar versão do Blender
+        run: |
+          ./blender_bin/blender --version
+          echo "BLENDER_BIN=$(pwd)/blender_bin/blender" >> "$GITHUB_ENV"
+
+      # ── Preparar caminhos ─────────────────────────────────────────────────
+      - name: Preparar directórios
+        run: |
+          mkdir -p animation-results frames-tmp
+          echo "REPORT=animation-results/animation-report.json"     >> "$GITHUB_ENV"
+          echo "PREVIEW=animation-results/preview.png"              >> "$GITHUB_ENV"
+          echo "VIDEO=animation-results/knight-attack.mp4"          >> "$GITHUB_ENV"
+          echo "FRAMES_DIR=$(pwd)/frames-tmp"                        >> "$GITHUB_ENV"
+
+      # ── Renderizar frames (Blender) ───────────────────────────────────────
+      - name: Renderizar frames com Blender
+        run: |
+          set -euo pipefail
+          "$BLENDER_BIN" \
+            --background \
+            --python library/tools/animate_character.py \
+            -- \
+            --glb "$GLB_PATH" \
+            --animation "$ANIM_NAME" \
+            --fps "$FPS" \
+            --max-frames "$MAX_FRAMES" \
+            --resolution "$RESOLUTION" \
+            --frames-dir "$FRAMES_DIR" \
+            --preview "$PREVIEW" \
+            --report "$REPORT" \
+            --asset-id "$ASSET_ID"
+
+      # ── Verificar frames ──────────────────────────────────────────────────
+      - name: Verificar frames renderizados
+        run: |
+          N_FRAMES=$(find "$FRAMES_DIR" -name "frame_*.png" | wc -l)
+          echo "Frames renderizados: $N_FRAMES"
+          if [ "$N_FRAMES" -eq 0 ]; then
+            echo "ERRO: nenhum frame foi renderizado." >&2
+            cat "$REPORT" 2>/dev/null || true
+            exit 1
+          fi
+          echo "N_FRAMES=$N_FRAMES" >> "$GITHUB_ENV"
+
+      # ── Instalar FFmpeg ───────────────────────────────────────────────────
+      - name: Instalar FFmpeg
+        run: |
+          sudo apt-get update -qq
+          sudo apt-get install -y --no-install-recommends ffmpeg 2>/dev/null
+          ffmpeg -version | head -1
+
+      # ── Gerar MP4 ─────────────────────────────────────────────────────────
+      - name: Gerar MP4 com FFmpeg
+        run: |
+          set -euo pipefail
+          # Os frames estão nomeados frame_0000.png, frame_0001.png, ...
+          ffmpeg -y \
+            -framerate "$FPS" \
+            -i "$FRAMES_DIR/frame_%04d.png" \
+            -c:v libx264 \
+            -pix_fmt yuv420p \
+            -preset fast \
+            -crf 23 \
+            -movflags +faststart \
+            "$VIDEO"
+
+          if [ ! -f "$VIDEO" ] || [ ! -s "$VIDEO" ]; then
+            echo "ERRO: MP4 não gerado ou vazio." >&2
+            exit 1
+          fi
+          echo "✅ MP4 gerado: $(du -sh "$VIDEO" | cut -f1)"
+
+      # ── Validar MP4 com ffprobe ───────────────────────────────────────────
+      - name: Validar MP4 com ffprobe
+        run: |
+          python3 - <<'PY'
+          import json, os, subprocess, sys
+
+          video = os.environ["VIDEO"]
+          report_path = os.environ["REPORT"]
+
+          result = subprocess.run(
+              ["ffprobe", "-v", "quiet", "-print_format", "json", "-show_streams",
+               "-show_format", video],
+              capture_output=True, text=True
+          )
+          if result.returncode != 0:
+              print(f"ERRO ffprobe: {result.stderr}", file=sys.stderr)
+              sys.exit(1)
+
+          info = json.loads(result.stdout)
+          fmt  = info.get("format", {})
+          streams = info.get("streams", [])
+
+          # Encontrar stream de vídeo
+          vid_stream = next((s for s in streams if s.get("codec_type") == "video"), None)
+          if vid_stream is None:
+              print("ERRO: nenhuma stream de vídeo encontrada.", file=sys.stderr)
+              sys.exit(1)
+
+          duration_s = float(fmt.get("duration", 0))
+          nb_frames  = int(vid_stream.get("nb_frames", 0))
+          codec      = vid_stream.get("codec_name", "?")
+          pix_fmt    = vid_stream.get("pix_fmt", "?")
+          width      = vid_stream.get("width", 0)
+          height     = vid_stream.get("height", 0)
+
+          print(f"  codec:      {codec}")
+          print(f"  pix_fmt:    {pix_fmt}")
+          print(f"  resolução:  {width}×{height}")
+          print(f"  duração:    {duration_s:.2f}s")
+          print(f"  frames:     {nb_frames}")
+
+          # Actualizar o relatório
+          try:
+              rep = json.loads(open(report_path, encoding="utf-8").read())
+              rep["ffmpeg_success"]        = True
+              rep["video_path"]            = video
+              rep["video_duration_s"]      = duration_s
+              rep["video_frames_detected"] = nb_frames
+              with open(report_path, "w", encoding="utf-8") as f:
+                  json.dump(rep, f, ensure_ascii=False, indent=2)
+                  f.write("\n")
+          except Exception as e:
+              print(f"Aviso: não foi possível actualizar o relatório: {e}")
+
+          # Critérios de aprovação
+          errors = []
+          if duration_s < 0.1:
+              errors.append(f"duração muito curta: {duration_s:.2f}s")
+          if nb_frames == 0:
+              errors.append("zero frames detectados")
+          if codec != "h264":
+              errors.append(f"codec inesperado: {codec!r} (esperado h264)")
+          if pix_fmt not in ("yuv420p", "yuvj420p"):
+              errors.append(f"pix_fmt inesperado: {pix_fmt!r}")
+
+          if errors:
+              print("\nERRO(S) na validação do vídeo:", file=sys.stderr)
+              for e in errors:
+                  print(f"  ! {e}", file=sys.stderr)
+              sys.exit(1)
+
+          print(f"\n✅ MP4 válido: {duration_s:.2f}s, {nb_frames} frames, {codec}/{pix_fmt}")
+          PY
+
+      # ── Limpar frames intermédios ─────────────────────────────────────────
+      - name: Limpar frames intermédios
+        if: always()
+        run: rm -rf "$FRAMES_DIR" || true
+
+      # ── Escrever sumário ──────────────────────────────────────────────────
+      - name: Escrever sumário
+        if: always()
+        run: |
+          python3 - <<'PY'
+          import json, os, pathlib
+
+          rp = os.environ.get("REPORT", "animation-results/animation-report.json")
+          summary_path = os.environ.get("GITHUB_STEP_SUMMARY", "")
+          p = pathlib.Path(rp)
+          if not p.is_file():
+              txt = "## Animação 3D\n\n❌ Relatório não gerado.\n"
+          else:
+              r = json.loads(p.read_text(encoding="utf-8"))
+              check = lambda b: "✅" if b else "❌"
+              lines = [
+                  f"## Animação 3D: `{r['asset_id']}`",
+                  f"**Blender:** {r.get('blender_version', '?')}  |  "
+                  f"**Animação:** `{r.get('animation_name_used') or r.get('animation_name_requested')}`",
+                  "",
+                  "| Etapa | Resultado |",
+                  "|---|---|",
+                  f"| Importação GLB       | {check(r['import_success'])} |",
+                  f"| Animação encontrada  | {check(r['animation_found'])} `{r.get('animation_name_used','')}` |",
+                  f"| Animação aplicada    | {check(r['animation_applied'])} |",
+                  f"| Movimento confirmado | {check(r['movement_confirmed'])} {r['bones_moved']} osso(s) moveram-se |",
+                  f"| Frames renderizados  | {check(r['frames_rendered'] > 0)} {r['frames_rendered']}/{r['frames_requested']} |",
+                  f"| Preview PNG          | {check(r['preview_success'])} |",
+                  f"| FFmpeg MP4           | {check(r.get('ffmpeg_success', False))} |",
+                  f"| Vídeo válido         | {check(bool(r.get('video_frames_detected')))} "
+                  f"{r.get('video_duration_s', '?'):.1f}s, {r.get('video_frames_detected', '?')} frames |"
+                  if isinstance(r.get('video_duration_s'), (int, float))
+                  else f"| Vídeo válido         | — |",
+              ]
+              if r.get("errors"):
+                  lines += ["", "**Erros:**"]
+                  for e in r["errors"]:
+                      lines.append(f"- `{str(e)[:200]}`")
+              if r.get("warnings"):
+                  lines += ["", "**Avisos:**"]
+                  for w in r["warnings"]:
+                      lines.append(f"- {w}")
+              txt = "\n".join(lines) + "\n"
+
+          print(txt)
+          if summary_path:
+              with open(summary_path, "a", encoding="utf-8") as f:
+                  f.write(txt)
+          PY
+
+      # ── Disponibilizar artefactos ─────────────────────────────────────────
+      - name: Disponibilizar artefactos de animação
+        if: always()
+        uses: actions/upload-artifact@v4
+        with:
+          name: animation-${{ inputs.asset_id }}-${{ github.run_id }}
+          path: |
+            animation-results/
+          if-no-files-found: warn
+          retention-days: 14
