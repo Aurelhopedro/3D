@@ -227,19 +227,16 @@ jobs:
           echo "BLENDER_BIN=$(pwd)/blender_bin/blender" >> "$GITHUB_ENV"
 
       # ── Instalar dependências de display virtual (EGL / OpenGL / Xvfb) ───
-      # O motor EEVEE precisa de libEGL mesmo em modo --background.
-      # Idêntico ao que validate-3d-assets.yml já usa com sucesso.
+      # Ubuntu 24.04: libgles2-mesa foi removido, o pacote correcto é libgles2.
+      # Usamos || true por pacote para ser robusto a variações de runner.
       - name: Instalar dependências de display virtual
         run: |
           sudo apt-get update -qq
-          sudo apt-get install -y --no-install-recommends \
-              libgles2-mesa \
-              libgl1-mesa-dri \
-              libxxf86vm1 \
-              libxfixes3 \
-              libxi6 \
-              libxrender1 \
-              xvfb
+          sudo apt-get install -y --no-install-recommends xvfb libxxf86vm1 libxfixes3 libxi6 libxrender1
+          sudo apt-get install -y --no-install-recommends libgles2 || \
+          sudo apt-get install -y --no-install-recommends libgles2-mesa || true
+          sudo apt-get install -y --no-install-recommends libgl1-mesa-dri || \
+          sudo apt-get install -y --no-install-recommends libgl1 || true
 
       # ── Preparar caminhos ─────────────────────────────────────────────────
       - name: Preparar directórios
@@ -283,8 +280,7 @@ jobs:
       # ── Instalar FFmpeg ───────────────────────────────────────────────────
       - name: Instalar FFmpeg
         run: |
-          sudo apt-get update -qq
-          sudo apt-get install -y --no-install-recommends ffmpeg 2>/dev/null
+          sudo apt-get install -y --no-install-recommends ffmpeg
           ffmpeg -version | head -1
 
       # ── Gerar MP4 ─────────────────────────────────────────────────────────
