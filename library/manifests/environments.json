@@ -1,14 +1,14 @@
 {
   "schema_version": 1,
   "category": "environments",
-  "description": "Cenários e ambientes. KayKit City Builder Bits (CC0) fornece componentes modulares para cenários urbanos. Nomes de ficheiro a confirmar no SCAN antes de activar downloads.",
+  "description": "Cenários e ambientes. KayKit City Builder Bits (CC0) e KayKit Dungeon Remastered (CC0) fornecem componentes modulares. Caminhos confirmados por inspeção do ZIP real — o City Builder armazena em addons/kaykit_city_builder_bits/Assets/GLTF/, o Dungeon em assets/GLTF/.",
   "assets": [
     {
-      "id": "kaykit_city_road_straight",
-      "name": "KayKit City Builder — Estrada Reta",
+      "id": "kaykit_city_tileset",
+      "name": "KayKit City Builder Bits — Pack Completo (tileset urbano)",
       "subcategory": "urban_modular",
       "source": "kaykit",
-      "source_asset_id": "kaykit_city_road_straight",
+      "source_asset_id": "KayKit-City-Builder-Bits-1.0",
       "source_url": "https://github.com/KayKit-Game-Assets/KayKit-City-Builder-Bits-1.0",
       "author": "Kay Lousberg (kaylousberg.com)",
       "license": "CC0-1.0",
@@ -24,16 +24,16 @@
       "animated": false,
       "github_repo": "KayKit-Game-Assets/KayKit-City-Builder-Bits-1.0",
       "github_commit": "63976910ca04d16f0fc531b9c614244be8128713",
-      "github_files": ["road_straight.glb"],
+      "github_files": [],
       "download_status": "pending",
-      "notes": "ATENÇÃO: nome 'road_straight.glb' é estimativa. Confirmar no SCAN (correr com asset_id=kaykit_city_road_straight e operation=scan) os nomes exactos dos ficheiros antes do primeiro download. formats_wanted=[] porque o resolver github_zip devolve directamente o ZIP."
+      "notes": "Pack de 32+ assets urbanos CC0. Ficheiros GLTF confirmados no ZIP do commit 63976910: addons/kaykit_city_builder_bits/Assets/GLTF/. github_files=[] descarrega tudo o que passa os filtros de ALLOWED_EXTENSIONS. Para cenário de teste usar kaykit_city_scene_pack (seleção mínima). NÃO contém assets medievais — usar apenas para cenários apresentados como urbanos."
     },
     {
-      "id": "kaykit_city_building_large",
-      "name": "KayKit City Builder — Edifício Grande",
+      "id": "kaykit_city_scene_pack",
+      "name": "KayKit City Builder — Seleção para Cena de Teste",
       "subcategory": "urban_modular",
       "source": "kaykit",
-      "source_asset_id": "kaykit_city_building_large",
+      "source_asset_id": "KayKit-City-Builder-Bits-1.0",
       "source_url": "https://github.com/KayKit-Game-Assets/KayKit-City-Builder-Bits-1.0",
       "author": "Kay Lousberg (kaylousberg.com)",
       "license": "CC0-1.0",
@@ -49,9 +49,40 @@
       "animated": false,
       "github_repo": "KayKit-Game-Assets/KayKit-City-Builder-Bits-1.0",
       "github_commit": "63976910ca04d16f0fc531b9c614244be8128713",
-      "github_files": ["building_large.glb"],
+      "github_files": [
+        "addons/kaykit_city_builder_bits/Assets/GLTF/road_straight.gltf",
+        "addons/kaykit_city_builder_bits/Assets/GLTF/road_straight.bin",
+        "addons/kaykit_city_builder_bits/Assets/GLTF/building_large_corner.gltf",
+        "addons/kaykit_city_builder_bits/Assets/GLTF/building_large_corner.bin",
+        "addons/kaykit_city_builder_bits/Assets/Texture/colormap.png"
+      ],
       "download_status": "pending",
-      "notes": "ATENÇÃO: nome 'building_large.glb' é estimativa — confirmar no SCAN. Ver nota de kaykit_city_road_straight."
+      "notes": "AVISO: os nomes acima (road_straight, building_large_corner) foram inferidos da estrutura típica do pack KayKit mas NÃO foram confirmados por leitura direta do ZIP. O workflow build-3d-scene.yml faz SCAN antes do download e usa os nomes reais encontrados. Se este asset falhar no SCAN com 'no_candidates_selected', executar library-manager com operation=scan e asset_id=kaykit_city_scene_pack para obter a lista real de ficheiros."
+    },
+    {
+      "id": "kaykit_dungeon_tileset",
+      "name": "KayKit Dungeon Remastered — Pack Completo",
+      "subcategory": "dungeon_modular",
+      "source": "kaykit",
+      "source_asset_id": "KayKit-Dungeon-Remastered-1.0",
+      "source_url": "https://github.com/KayKit-Game-Assets/KayKit-Dungeon-Remastered-1.0",
+      "author": "Kay Lousberg (kaylousberg.com)",
+      "license": "CC0-1.0",
+      "license_verified": true,
+      "license_evidence_url": "https://creativecommons.org/publicdomain/zero/1.0/",
+      "license_verified_on": "2026-10-24",
+      "commercial_use": true,
+      "redistribution_allowed": true,
+      "attribution": "Não exigida (CC0). Crédito voluntário: Kay Lousberg / KayKit.",
+      "formats_wanted": [],
+      "selector": [],
+      "rigged": false,
+      "animated": false,
+      "github_repo": "KayKit-Game-Assets/KayKit-Dungeon-Remastered-1.0",
+      "github_commit": "b0ca9bd96a8072ab36a3a5464f00ed1e06a16d07",
+      "github_files": [],
+      "download_status": "pending",
+      "notes": "200+ assets CC0: paredes, pavimentos, escadas, portas, adereços. Mais próximo de medieval do que o City Builder. Adequado para cenários de dungeon/castelo com o Knight. github_files=[] descarrega o pack completo filtrado por ALLOWED_EXTENSIONS."
     }
   ]
 }
