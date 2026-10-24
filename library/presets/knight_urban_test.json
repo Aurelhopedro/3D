@@ -1,6 +1,7 @@
 {
-  "_comment": "Cena de teste da Fase 5 — Knight urbano. Usa assets KayKit CC0 confirmados. NOTA: kaykit_city_scene_pack deve estar descarregado antes de executar este cenário (GitHub Actions workflow build-3d-scene faz o download automaticamente). Se o pack de cidade não tiver os ficheiros específicos listados, o workflow usa apenas o personagem com chão de fallback.",
+  "_comment": "Cena de teste da Fase 5 — Knight com ambiente urbano KayKit. ATENÇÃO: require_scene_assets=true torna o ambiente OBRIGATÓRIO. Se os assets de ambiente não forem importados, o build falha com erro explícito. Não existe fallback silencioso para chão vazio neste preset.",
   "scene_name": "knight_urban_test",
+  "require_scene_assets": true,
   "environment": {
     "type": "modular",
     "assets": [
@@ -27,9 +28,9 @@
     "preset": "daylight"
   },
   "output": {
-    "formats": ["png", "mp4"],
+    "formats": ["png"],
     "resolution": 640,
     "fps": 24,
-    "max_frames": 26
+    "max_frames": 1
   }
 }
