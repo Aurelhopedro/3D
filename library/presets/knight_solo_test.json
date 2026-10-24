@@ -1,6 +1,7 @@
 {
-  "_comment": "Cena de teste mínima — Knight sozinho, sem assets de ambiente. Usa apenas iluminação daylight e chão de fallback. Ideal para testar o pipeline build_scene.py sem dependência de downloads.",
+  "_comment": "Cena de teste mínima — Knight sozinho, sem assets de ambiente. Usa apenas iluminação daylight e chão de fallback. Ideal para testar o pipeline build_scene.py sem dependência de downloads externos. Max_frames=1 para teste rápido inicial.",
   "scene_name": "knight_solo_test",
+  "require_scene_assets": false,
   "environment": {
     "type": "modular",
     "assets": []
@@ -20,9 +21,9 @@
     "preset": "daylight"
   },
   "output": {
-    "formats": ["png", "mp4", "glb"],
+    "formats": ["png"],
     "resolution": 640,
     "fps": 24,
-    "max_frames": 26
+    "max_frames": 1
   }
 }
