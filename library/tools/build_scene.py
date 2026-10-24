@@ -175,13 +175,7 @@ def _validate_scene_config(cfg: Dict[str, Any]) -> List[str]:
 
 def _resolve_asset_glb(asset_id: str, library_root: pathlib.Path,
                        category_hint: str = "") -> Optional[pathlib.Path]:
-    """Procura o primeiro GLB/GLTF de um asset_id na biblioteca local.
-
-    Estratégia:
-      1. library/assets/<category_hint>/<asset_id>/*.glb   (se category_hint dado)
-      2. library/assets/*/<asset_id>/*.glb                 (todos as categorias)
-      3. Aceita também .gltf
-    """
+    """Procura o primeiro GLB/GLTF de um asset_id na biblioteca local."""
     assets_root = library_root / "assets"
 
     def _find_in_dir(adir: pathlib.Path) -> Optional[pathlib.Path]:
@@ -193,13 +187,11 @@ def _resolve_asset_glb(asset_id: str, library_root: pathlib.Path,
                 return matches[0]
         return None
 
-    # Tentativa 1: categoria hint
     if category_hint:
         p = _find_in_dir(assets_root / category_hint / asset_id)
         if p:
             return p
 
-    # Tentativa 2: varredura de todas as categorias
     if assets_root.is_dir():
         for cat_dir in sorted(assets_root.iterdir()):
             if not cat_dir.is_dir():
@@ -214,10 +206,8 @@ def _resolve_asset_glb(asset_id: str, library_root: pathlib.Path,
 def _resolve_assets_from_config(cfg: Dict[str, Any],
                                 library_root: pathlib.Path,
                                 report: Dict[str, Any]) -> Dict[str, pathlib.Path]:
-    """Devolve mapa asset_id → Path para todos os assets da cena.
-    Adiciona avisos/erros ao relatório para assets não encontrados.
-    """
-    needed: Dict[str, str] = {}  # asset_id → category_hint
+    """Devolve mapa asset_id → Path para todos os assets da cena."""
+    needed: Dict[str, str] = {}
 
     for asset in cfg.get("environment", {}).get("assets", []):
         needed[asset["asset_id"]] = "environments"
@@ -257,7 +247,6 @@ _COLLECTIONS = [
 
 
 def _make_collections() -> Dict[str, Any]:
-    """Cria coleções hierárquicas se ainda não existirem."""
     scene = bpy.context.scene
     cols: Dict[str, Any] = {}
 
@@ -269,7 +258,6 @@ def _make_collections() -> Dict[str, Any]:
             col = bpy.data.collections.new(name)
             cols[name] = col
 
-    # Ligar à cena
     sc = scene.collection
     if cols["SCENE"].name not in [c.name for c in sc.children]:
         sc.children.link(cols["SCENE"])
@@ -293,7 +281,6 @@ def _objects_before(scene: Any) -> set:
 
 
 def _import_glb(path: pathlib.Path) -> Tuple[bool, str, List[Any]]:
-    """Importa um GLB/GLTF. Devolve (sucesso, erro|"", objetos_importados)."""
     if not path.is_file():
         return False, f"ficheiro não encontrado: {path}", []
     if path.stat().st_size == 0:
@@ -313,7 +300,6 @@ def _import_glb(path: pathlib.Path) -> Tuple[bool, str, List[Any]]:
 
 
 def _move_to_collection(objects: List[Any], target_col: Any) -> None:
-    """Move objetos para uma coleção específica, removendo das outras."""
     for obj in objects:
         for col in list(obj.users_collection):
             col.objects.unlink(obj)
@@ -322,15 +308,9 @@ def _move_to_collection(objects: List[Any], target_col: Any) -> None:
 
 def _apply_transform(objects: List[Any], position: List[float],
                      rotation_deg: List[float], scale: List[float]) -> None:
-    """Aplica posição, rotação e escala ao ponto de origem do grupo importado.
-
-    Move o ponto de origem calculando o bounding box coletivo e translacionando
-    todos os objetos do grupo de forma que o centro fique em 'position'.
-    """
     if not objects:
         return
 
-    # Calcular o centro atual do grupo (bounding box global de todos os objetos)
     min_v = mathutils.Vector((math.inf, math.inf, math.inf))
     max_v = mathutils.Vector((-math.inf, -math.inf, -math.inf))
     for obj in objects:
@@ -346,17 +326,14 @@ def _apply_transform(objects: List[Any], position: List[float],
             max_v.z = max(max_v.z, world_co.z)
 
     if math.isinf(min_v.x):
-        # Sem bounding box — usar location do primeiro objeto
         center = objects[0].location.copy()
     else:
         center = (min_v + max_v) / 2.0
-        # Para posicionamento sobre o chão: usar min_z como base
         center.z = min_v.z
 
     target = mathutils.Vector(position)
     offset = target - center
 
-    # Aplicar escala (antes de mover para preservar orientação)
     for obj in objects:
         if obj.parent is None:
             obj.scale.x *= scale[0]
@@ -369,7 +346,7 @@ def _apply_transform(objects: List[Any], position: List[float],
 
 
 # ─────────────────────────────────────────────────────────────────────────────
-# ANIMAÇÃO (reutiliza lógica de animate_character.py)
+# ANIMAÇÃO
 # ─────────────────────────────────────────────────────────────────────────────
 
 def _get_armature_from(objects: List[Any]) -> Optional[Any]:
@@ -412,11 +389,10 @@ def _find_action(name: str) -> Optional[Any]:
 
 
 # ─────────────────────────────────────────────────────────────────────────────
-# BOUNDS GLOBAIS DA CENA
+# BOUNDS
 # ─────────────────────────────────────────────────────────────────────────────
 
 def _scene_bounds() -> Tuple[float, float, float, float, float, float]:
-    """Bounding box de todos os meshes da cena no espaço mundial."""
     min_v = mathutils.Vector((math.inf, math.inf, math.inf))
     max_v = mathutils.Vector((-math.inf, -math.inf, -math.inf))
 
@@ -438,7 +414,6 @@ def _scene_bounds() -> Tuple[float, float, float, float, float, float]:
 
 
 def _character_bounds(char_objects: List[Any]) -> Tuple[float, float, float, float, float, float]:
-    """Bounding box apenas dos objetos do personagem."""
     min_v = mathutils.Vector((math.inf, math.inf, math.inf))
     max_v = mathutils.Vector((-math.inf, -math.inf, -math.inf))
     found = False
@@ -458,7 +433,7 @@ def _character_bounds(char_objects: List[Any]) -> Tuple[float, float, float, flo
 
 
 # ─────────────────────────────────────────────────────────────────────────────
-# CÂMARA — três modos
+# CÂMARA
 # ─────────────────────────────────────────────────────────────────────────────
 
 def _place_camera_for_bounds(
@@ -467,7 +442,6 @@ def _place_camera_for_bounds(
         mode: str,
         report: Dict[str, Any],
 ) -> Any:
-    """Cria e posiciona câmara. Modos: character_focus | scene_overview | cinematic."""
     xmn, xmx, ymn, ymx, zmn, zmx = bounds
     cx = (xmn + xmx) / 2.0
     cy = (ymn + ymx) / 2.0
@@ -478,18 +452,18 @@ def _place_camera_for_bounds(
 
     radius       = math.sqrt(dx*dx + dy*dy + dz*dz) / 2.0
     radius_safe  = radius * 1.35
-    fov_rad      = math.radians(46.8)   # 50 mm equiv.
+    fov_rad      = math.radians(46.8)
     cam_dist     = radius_safe / math.sin(fov_rad / 2.0)
 
     if mode == "scene_overview":
         elev = math.radians(35)
         azim = math.radians(45)
-        cam_dist *= 1.4   # mais afastado para mostrar cenário completo
+        cam_dist *= 1.4
     elif mode == "character_focus":
         elev = math.radians(15)
         azim = math.radians(30)
-        cam_dist *= 0.85  # mais próximo — foco no personagem
-    else:  # cinematic (padrão)
+        cam_dist *= 0.85
+    else:  # cinematic
         elev = math.radians(12)
         azim = math.radians(40)
 
@@ -524,7 +498,6 @@ def _adjust_camera_framing(
         max_iter: int = 6,
         report: Dict[str, Any] = {},
 ) -> None:
-    """Ajusta câmara iterativamente para garantir que o personagem aparece enquadrado."""
     if not char_objects:
         return
 
@@ -583,7 +556,6 @@ def _adjust_camera_framing(
         )
         factor = 1.0 + max(0.15, min(0.40, overshoot * 1.5))
 
-        # Centro do personagem
         bounds = _character_bounds(char_objects)
         target = mathutils.Vector((
             (bounds[0]+bounds[1])/2,
@@ -597,17 +569,13 @@ def _adjust_camera_framing(
 
 
 # ─────────────────────────────────────────────────────────────────────────────
-# ILUMINAÇÃO — preset daylight / studio / cinematic
+# ILUMINAÇÃO
 # ─────────────────────────────────────────────────────────────────────────────
 
 def _setup_daylight(scene: Any,
                     bounds: Tuple[float, float, float, float, float, float],
                     report: Dict[str, Any]) -> None:
-    """
-    Preset 'daylight': Sol + Céu HDRI nativo do Blender + luz de preenchimento.
-    Não requer ficheiros externos.
-    Cria sombras coerentes e fundo de céu.
-    """
+    """Preset 'daylight': Sol + Céu Nishita nativo + luz de preenchimento."""
     xmn, xmx, ymn, ymx, zmn, zmx = bounds
     cx = (xmn+xmx)/2; cy = (ymn+ymx)/2
     h  = zmx - zmn or 2.0
@@ -615,14 +583,14 @@ def _setup_daylight(scene: Any,
     lights_ok = 0
 
     # ── Sol (Key Light) ──────────────────────────────────────────────────────
-    # BUGFIX: zmz → zmn (a variável zmz não existia, causava NameError)
+    # BUGFIX v2: zmz → zmn (typo corrigido — zmz causava NameError)
     try:
         bpy.ops.object.light_add(type="SUN", location=(cx + 5, cy - 3, zmn + h*2.5))
         sun = bpy.context.active_object
         sun.name = "Sun_Key"
         sun.data.energy = 3.5
         sun.data.color  = (1.0, 0.97, 0.88)
-        sun.data.angle  = math.radians(3.0)  # tamanho angular do sol → sombras suaves
+        sun.data.angle  = math.radians(3.0)
         direction = mathutils.Vector((cx, cy, zmn + h*0.5)) - sun.location
         sun.rotation_euler = direction.to_track_quat("-Z", "Y").to_euler()
         lights_ok += 1
@@ -636,14 +604,14 @@ def _setup_daylight(scene: Any,
         fill.name = "Sky_Fill"
         fill.data.energy = 200.0
         fill.data.size   = max(h * 2.0, 4.0)
-        fill.data.color  = (0.55, 0.70, 1.0)  # cor do céu
+        fill.data.color  = (0.55, 0.70, 1.0)
         direction = mathutils.Vector((cx, cy, zmn + h*0.5)) - fill.location
         fill.rotation_euler = direction.to_track_quat("-Z", "Y").to_euler()
         lights_ok += 1
     except Exception as e:
         report["warnings"].append(f"Fill Sky falhou: {e}")
 
-    # ── Fundo: céu Nishita (nativo Blender 3.6+) ────────────────────────────
+    # ── Fundo: céu Nishita ───────────────────────────────────────────────────
     try:
         world = bpy.data.worlds.new("DaylightWorld")
         world.use_nodes = True
@@ -652,7 +620,6 @@ def _setup_daylight(scene: Any,
         if bg_node is None:
             bg_node = nt.nodes.new("ShaderNodeBackground")
 
-        # Tentar nó SkyTexture Nishita
         sky_node = nt.nodes.new("ShaderNodeTexSky")
         sky_node.sky_type = "NISHITA"
         sky_node.sun_elevation = math.radians(45.0)
@@ -664,7 +631,6 @@ def _setup_daylight(scene: Any,
         tc_node = nt.nodes.new("ShaderNodeTexCoord")
         nt.links.new(tc_node.outputs["Generated"], sky_node.inputs["Vector"])
         nt.links.new(sky_node.outputs["Color"],    bg_node.inputs["Color"])
-
         bg_node.inputs["Strength"].default_value = 1.0
 
         out_node = nt.nodes.get("World Output")
@@ -675,7 +641,6 @@ def _setup_daylight(scene: Any,
         scene.world = world
         report["warnings"].append("Céu Nishita ativado (daylight)")
     except Exception as e:
-        # Fallback: céu azul simples
         try:
             world = bpy.data.worlds.new("DaylightFallback")
             world.use_nodes = True
@@ -697,7 +662,6 @@ def _setup_three_point(scene: Any,
                        cam_obj: Any,
                        preset: str,
                        report: Dict[str, Any]) -> None:
-    """Iluminação de três pontos (studio / cinematic)."""
     xmn, xmx, ymn, ymx, zmn, zmx = bounds
     cx = (xmn+xmx)/2; cy = (ymn+ymx)/2; cz = (zmn+zmx)/2
     h  = zmx - zmn or 2.0
@@ -727,7 +691,6 @@ def _setup_three_point(scene: Any,
         _add_area("KeyLight",  (cx+r*1.5, cy-r*1.2, cz+h*0.9), 80.0, (1.0,0.97,0.90))
         _add_area("FillLight", (cx-r*1.8, cy-r*0.5, cz+h*0.4), 18.0, (0.85,0.90,1.0))
         _add_area("RimLight",  (cx-r*0.3, cy+r*2.0, cz+h*1.1), 45.0, (0.7,0.8,1.0))
-        # Fundo escuro cinematic
         world = bpy.data.worlds.new("CinWorld")
         world.use_nodes = True
         bg = world.node_tree.nodes.get("Background")
@@ -735,7 +698,7 @@ def _setup_three_point(scene: Any,
             bg.inputs["Color"].default_value    = (0.03, 0.03, 0.05, 1.0)
             bg.inputs["Strength"].default_value = 0.05
         scene.world = world
-    else:  # studio
+    else:
         _add_area("KeyLight",  (cx+r*1.4, cy-r*1.0, cz+h*0.8), 70.0, (1.0,0.98,0.95))
         _add_area("FillLight", (cx-r*1.6, cy-r*0.4, cz+h*0.5), 40.0, (0.95,0.97,1.0))
         _add_area("RimLight",  (cx-r*0.2, cy+r*1.8, cz+h*1.0), 35.0, (1.0,1.0,1.0))
@@ -774,7 +737,7 @@ def _add_ground_plane(scene: Any,
         bsdf = mat.node_tree.nodes.get("Principled BSDF")
         if bsdf:
             if style == "daylight":
-                bsdf.inputs["Base Color"].default_value = (0.22, 0.20, 0.16, 1.0)  # terra
+                bsdf.inputs["Base Color"].default_value = (0.22, 0.20, 0.16, 1.0)
             elif style == "cinematic":
                 bsdf.inputs["Base Color"].default_value = (0.06, 0.06, 0.08, 1.0)
             else:
@@ -849,7 +812,6 @@ def _setup_render(scene: Any, resolution: int, fps: int) -> None:
 # ─────────────────────────────────────────────────────────────────────────────
 
 def _export_glb(output_path: pathlib.Path, report: Dict[str, Any]) -> bool:
-    """Exporta a cena para GLB e verifica se o ficheiro foi criado."""
     output_path.parent.mkdir(parents=True, exist_ok=True)
     try:
         bpy.ops.export_scene.gltf(
@@ -869,9 +831,7 @@ def _export_glb(output_path: pathlib.Path, report: Dict[str, Any]) -> bool:
         return False
 
     if not output_path.is_file() or output_path.stat().st_size < 100:
-        report["errors"].append(
-            f"GLB exportado mas parece inválido: {output_path}"
-        )
+        report["errors"].append(f"GLB exportado mas parece inválido: {output_path}")
         return False
 
     size_kb = output_path.stat().st_size // 1024
@@ -879,14 +839,12 @@ def _export_glb(output_path: pathlib.Path, report: Dict[str, Any]) -> bool:
     report["glb_path"]     = str(output_path)
     print(f"  [GLB] exportado: {output_path}  ({size_kb} KB)")
 
-    # Teste de reimportação (verifica se o GLB é legível)
     try:
         before = {o.name for o in bpy.context.scene.objects}
         bpy.ops.import_scene.gltf(filepath=str(output_path))
         new_objs = [o for o in bpy.context.scene.objects if o.name not in before]
         if new_objs:
             report["glb_importable"] = True
-            # Limpar objetos da reimportação de teste
             for o in new_objs:
                 bpy.data.objects.remove(o, do_unlink=True)
             print(f"  [GLB] reimportação OK — {len(new_objs)} objetos validados")
@@ -905,33 +863,24 @@ def _export_glb(output_path: pathlib.Path, report: Dict[str, Any]) -> bool:
 def main() -> int:
     ap = argparse.ArgumentParser(description=__doc__,
                                   formatter_class=argparse.RawTextHelpFormatter)
-    ap.add_argument("--scene-config",     required=True,
-                    help="Caminho para o JSON de configuração da cena")
-    ap.add_argument("--output-dir",       required=True,
-                    help="Diretório para PNG, MP4 e GLB")
-    ap.add_argument("--report",           required=True,
-                    help="Caminho para o relatório JSON de saída")
-    ap.add_argument("--library-root",     default="",
-                    help="Raiz da biblioteca (ex: /github/workspace/library)")
-    ap.add_argument("--render-preview",   action="store_true",
-                    help="Renderizar imagem PNG de prévia")
-    ap.add_argument("--render-animation", action="store_true",
-                    help="Renderizar animação e gerar MP4")
-    ap.add_argument("--export-glb",       action="store_true",
-                    help="Exportar cena para GLB")
+    ap.add_argument("--scene-config",     required=True)
+    ap.add_argument("--output-dir",       required=True)
+    ap.add_argument("--report",           required=True)
+    ap.add_argument("--library-root",     default="")
+    ap.add_argument("--render-preview",   action="store_true")
+    ap.add_argument("--render-animation", action="store_true")
+    ap.add_argument("--export-glb",       action="store_true")
     ap.add_argument("--resolution",       type=int, default=640)
     ap.add_argument("--max-frames",       type=int, default=26)
     ap.add_argument("--fps",              type=int, default=24)
     args = ap.parse_args(_argv)
 
-    # Configurar sandbox
     if args.library_root:
         _set_library_root(pathlib.Path(args.library_root))
 
     output_dir = pathlib.Path(args.output_dir)
     output_dir.mkdir(parents=True, exist_ok=True)
 
-    # ── Carregar JSON de cena ─────────────────────────────────────────────
     cfg_path = pathlib.Path(args.scene_config)
     if not cfg_path.is_file():
         print(f"ERRO: ficheiro de cena não encontrado: {cfg_path}", file=sys.stderr)
@@ -948,7 +897,9 @@ def main() -> int:
     report["camera_mode"]     = cfg.get("camera", {}).get("mode", "cinematic")
     report["lighting_preset"] = cfg.get("lighting", {}).get("preset", "daylight")
 
-    # ── Validar configuração ──────────────────────────────────────────────
+    # require_scene_assets: true → ambiente obrigatório (sem fallback silencioso)
+    require_scene_assets: bool = bool(cfg.get("require_scene_assets", False))
+
     errs = _validate_scene_config(cfg)
     if errs:
         for e in errs:
@@ -956,7 +907,6 @@ def main() -> int:
         _save_report(report, args.report)
         return 1
 
-    # ── Usar parâmetros CLI se superiores aos do JSON ─────────────────────
     output_cfg  = cfg.get("output", {})
     resolution  = max(args.resolution, output_cfg.get("resolution", 640))
     fps         = output_cfg.get("fps", args.fps)
@@ -966,7 +916,6 @@ def main() -> int:
     render_animation = args.render_animation or ("mp4"  in output_cfg.get("formats", []))
     do_export_glb    = args.export_glb       or ("glb"  in output_cfg.get("formats", []))
 
-    # ── Resolver assets ───────────────────────────────────────────────────
     lib_root = (pathlib.Path(args.library_root).resolve()
                 if args.library_root
                 else pathlib.Path(__file__).resolve().parents[1])
@@ -976,7 +925,6 @@ def main() -> int:
         _save_report(report, args.report)
         return 1
 
-    # ── Limpar cena e criar coleções ──────────────────────────────────────
     try:
         bpy.ops.wm.read_factory_settings(use_empty=True)
     except Exception:
@@ -991,6 +939,7 @@ def main() -> int:
     lighting_preset = cfg.get("lighting", {}).get("preset", "daylight")
     env_assets = cfg.get("environment", {}).get("assets", [])
     imported_env_count = 0
+    env_import_errors: List[str] = []
 
     for env_asset in env_assets:
         asset_id  = env_asset["asset_id"]
@@ -999,16 +948,19 @@ def main() -> int:
         scale     = env_asset.get("scale",    [1.0, 1.0, 1.0])
 
         if asset_id not in resolved:
-            report["errors"].append(f"asset de ambiente '{asset_id}' não resolvido")
+            err_msg = f"asset de ambiente '{asset_id}' não resolvido"
+            env_import_errors.append(err_msg)
+            report["errors"].append(err_msg)
             continue
 
         glb_path = resolved[asset_id]
         ok, err, objects = _import_glb(glb_path)
         if not ok:
-            report["errors"].append(f"falha ao importar '{asset_id}': {err}")
+            err_msg = f"falha ao importar '{asset_id}': {err}"
+            env_import_errors.append(err_msg)
+            report["errors"].append(err_msg)
             continue
 
-        # Determinar coleção destino baseada no nome do asset
         col_name = "ENVIRONMENT"
         name_lo  = asset_id.lower()
         if any(k in name_lo for k in ("road", "street", "estrada")):
@@ -1028,6 +980,20 @@ def main() -> int:
               f"pos={position}")
 
     report["scene_assets_imported"] = imported_env_count
+
+    # ── Verificar integridade de ambiente ─────────────────────────────────
+    # Se require_scene_assets=true e nenhum asset foi importado → FALHA EXPLÍCITA
+    if require_scene_assets and env_assets and imported_env_count == 0:
+        msg = (
+            f"ERRO DE INTEGRIDADE: scene_name='{scene_name}' requer assets de ambiente "
+            f"(require_scene_assets=true) mas nenhum foi importado com sucesso. "
+            f"Erros de importação: {env_import_errors}. "
+            f"Não existe fallback silencioso — resolver o download dos assets antes de continuar."
+        )
+        report["errors"].append(msg)
+        print(f"\n{'='*64}\n{msg}\n{'='*64}\n", file=sys.stderr)
+        _save_report(report, args.report)
+        return 1
 
     # ── Importar personagens ──────────────────────────────────────────────
     char_objects_all: List[Any] = []
@@ -1065,9 +1031,7 @@ def main() -> int:
                     char_action  = action
                     print(f"  [personagem] '{asset_id}' animada com '{action.name}'")
                 except Exception as e:
-                    report["warnings"].append(
-                        f"animação '{anim_name}' não aplicada: {e}"
-                    )
+                    report["warnings"].append(f"animação '{anim_name}' não aplicada: {e}")
             else:
                 avail = [a.name for a in bpy.data.actions[:5]]
                 report["warnings"].append(
@@ -1075,21 +1039,17 @@ def main() -> int:
                     f"Disponíveis (5 primeiras): {avail}"
                 )
 
-    # ── Bounds para câmara e iluminação ──────────────────────────────────
+    # ── Bounds ────────────────────────────────────────────────────────────
     all_bounds  = _scene_bounds()
     char_bounds = (_character_bounds(char_objects_all)
                    if char_objects_all else all_bounds)
 
     # ── Câmara ────────────────────────────────────────────────────────────
     cam_mode = cfg.get("camera", {}).get("mode", "cinematic")
-
-    # Para cinematic/character_focus: usar bounds do personagem para enquadramento
-    # Para scene_overview: usar bounds de toda a cena
     bounds_for_cam = (char_bounds if cam_mode in ("cinematic", "character_focus")
                       else all_bounds)
     cam_obj = _place_camera_for_bounds(scene, bounds_for_cam, cam_mode, report)
 
-    # Mover câmara para coleção CAMERAS
     for col in list(cam_obj.users_collection):
         col.objects.unlink(cam_obj)
     cols["CAMERAS"].objects.link(cam_obj)
@@ -1102,9 +1062,9 @@ def main() -> int:
     else:
         _setup_three_point(scene, bounds_for_light, cam_obj, lighting_preset, report)
 
-    # Chão — só se não houver assets de pavimento na cena
+    # Chão — só se não houver assets de pavimento
     has_road_assets = any(
-        any(k in a["asset_id"].lower() for k in ("road","street","floor","floor","pavement"))
+        any(k in a["asset_id"].lower() for k in ("road","street","floor","pavement"))
         for a in env_assets
     )
     if not has_road_assets:
@@ -1113,12 +1073,12 @@ def main() -> int:
     # ── Render engine ─────────────────────────────────────────────────────
     _setup_render(scene, resolution, fps)
 
-    # ── Ajuste de enquadramento do personagem ─────────────────────────────
+    # ── Ajuste de enquadramento ───────────────────────────────────────────
     if char_objects_all:
         _adjust_camera_framing(scene, cam_obj, char_objects_all,
                                 margin=0.12, max_iter=6, report=report)
 
-    # ── Selecionar frames ─────────────────────────────────────────────────
+    # ── Frames ────────────────────────────────────────────────────────────
     if char_action:
         fr_start = int(char_action.frame_range[0])
         fr_end   = int(char_action.frame_range[1])
@@ -1135,9 +1095,9 @@ def main() -> int:
     scene.frame_start = fr_start
     scene.frame_end   = fr_end
 
-    # ── Renderizar preview PNG ────────────────────────────────────────────
+    # ── Preview PNG ───────────────────────────────────────────────────────
     if render_preview:
-        mid_frame  = frames_to_render[len(frames_to_render) // 2]
+        mid_frame    = frames_to_render[len(frames_to_render) // 2]
         preview_path = output_dir / f"{scene_name}_preview.png"
         scene.frame_set(mid_frame)
         bpy.context.view_layer.update()
@@ -1157,7 +1117,7 @@ def main() -> int:
             )
         report["render_time_s"] = round(time.time() - t0, 1)
 
-    # ── Renderizar animação → frames → MP4 ───────────────────────────────
+    # ── Animação → MP4 ────────────────────────────────────────────────────
     if render_animation:
         frames_dir = output_dir / "frames_tmp"
         frames_dir.mkdir(parents=True, exist_ok=True)
@@ -1207,7 +1167,6 @@ def main() -> int:
             except Exception as e:
                 report["errors"].append(f"FFmpeg não executou: {e}")
 
-            # Limpar frames temporários
             import shutil
             try:
                 shutil.rmtree(frames_dir, ignore_errors=True)
@@ -1216,12 +1175,12 @@ def main() -> int:
         else:
             report["errors"].append("nenhum frame renderizado — MP4 não gerado")
 
-    # ── Exportar GLB ──────────────────────────────────────────────────────
+    # ── GLB ───────────────────────────────────────────────────────────────
     if do_export_glb:
         glb_path = output_dir / f"{scene_name}.glb"
         _export_glb(glb_path, report)
 
-    # ── Guardar relatório e imprimir sumário ──────────────────────────────
+    # ── Relatório final ───────────────────────────────────────────────────
     _save_report(report, args.report)
     _print_summary(report)
 
