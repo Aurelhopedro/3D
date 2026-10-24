@@ -1,0 +1,35 @@
+{
+  "_comment": "Cena de teste da Fase 5 — Knight urbano. Usa assets KayKit CC0 confirmados. NOTA: kaykit_city_scene_pack deve estar descarregado antes de executar este cenário (GitHub Actions workflow build-3d-scene faz o download automaticamente). Se o pack de cidade não tiver os ficheiros específicos listados, o workflow usa apenas o personagem com chão de fallback.",
+  "scene_name": "knight_urban_test",
+  "environment": {
+    "type": "modular",
+    "assets": [
+      {
+        "asset_id": "kaykit_city_scene_pack",
+        "position": [0.0, 0.0, 0.0],
+        "rotation": [0.0, 0.0, 0.0],
+        "scale": [1.0, 1.0, 1.0]
+      }
+    ]
+  },
+  "characters": [
+    {
+      "asset_id": "kaykit_adv_knight",
+      "animation": "1H_Melee_Attack_Chop",
+      "position": [0.0, 0.0, 0.0]
+    }
+  ],
+  "camera": {
+    "mode": "cinematic",
+    "target": "kaykit_adv_knight"
+  },
+  "lighting": {
+    "preset": "daylight"
+  },
+  "output": {
+    "formats": ["png", "mp4"],
+    "resolution": 640,
+    "fps": 24,
+    "max_frames": 26
+  }
+}
