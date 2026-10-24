@@ -260,7 +260,6 @@ def _make_collections() -> Dict[str, Any]:
     """Cria coleções hierárquicas se ainda não existirem."""
     scene = bpy.context.scene
     cols: Dict[str, Any] = {}
-    root_col = None
 
     for name in _COLLECTIONS:
         existing = bpy.data.collections.get(name)
@@ -616,9 +615,9 @@ def _setup_daylight(scene: Any,
     lights_ok = 0
 
     # ── Sol (Key Light) ──────────────────────────────────────────────────────
+    # BUGFIX: zmz → zmn (a variável zmz não existia, causava NameError)
     try:
-        bpy.ops.object.light_add(type="SUN", location=(cx + 5, cy - 3, zmz + h*2.5)
-                                  if False else (cx + 5, cy - 3, zmn + h*2.5))
+        bpy.ops.object.light_add(type="SUN", location=(cx + 5, cy - 3, zmn + h*2.5))
         sun = bpy.context.active_object
         sun.name = "Sun_Key"
         sun.data.energy = 3.5
