@@ -226,6 +226,21 @@ jobs:
           ./blender_bin/blender --version
           echo "BLENDER_BIN=$(pwd)/blender_bin/blender" >> "$GITHUB_ENV"
 
+      # ── Instalar dependências de display virtual (EGL / OpenGL / Xvfb) ───
+      # O motor EEVEE precisa de libEGL mesmo em modo --background.
+      # Idêntico ao que validate-3d-assets.yml já usa com sucesso.
+      - name: Instalar dependências de display virtual
+        run: |
+          sudo apt-get update -qq
+          sudo apt-get install -y --no-install-recommends \
+              libgles2-mesa \
+              libgl1-mesa-dri \
+              libxxf86vm1 \
+              libxfixes3 \
+              libxi6 \
+              libxrender1 \
+              xvfb
+
       # ── Preparar caminhos ─────────────────────────────────────────────────
       - name: Preparar directórios
         run: |
@@ -235,11 +250,11 @@ jobs:
           echo "VIDEO=animation-results/knight-attack.mp4"          >> "$GITHUB_ENV"
           echo "FRAMES_DIR=$(pwd)/frames-tmp"                        >> "$GITHUB_ENV"
 
-      # ── Renderizar frames (Blender) ───────────────────────────────────────
+      # ── Renderizar frames (Blender + Xvfb) ───────────────────────────────
       - name: Renderizar frames com Blender
         run: |
           set -euo pipefail
-          "$BLENDER_BIN" \
+          xvfb-run -a "$BLENDER_BIN" \
             --background \
             --python library/tools/animate_character.py \
             -- \
