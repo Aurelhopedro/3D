@@ -43,7 +43,9 @@ MODEL_FORMATS = {
 }
 
 LOCAL_ID_RE = re.compile(r"^[a-z0-9][a-z0-9_\-]{0,63}$")
-SOURCE_ASSET_ID_RE = re.compile(r"^[A-Za-z0-9_\-]{1,80}$")
+# SOURCE_ASSET_ID_RE: aceita letras, dígitos, hífen, underscore e PONTO
+# O ponto é necessário para nomes como "KayKit-City-Builder-Bits-1.0"
+SOURCE_ASSET_ID_RE = re.compile(r"^[A-Za-z0-9_\-\.]{1,120}$")
 SOURCE_KEY_RE = re.compile(r"^[a-z0-9_]{1,32}$")
 
 DEFAULT_MAX_FILE_MB = 50
