@@ -1,7 +1,7 @@
 {
   "schema_version": 1,
   "category": "environments",
-  "description": "Cenários e ambientes. KayKit City Builder Bits (CC0) e KayKit Dungeon Remastered (CC0) fornecem componentes modulares. Caminhos confirmados por inspeção do ZIP real — o City Builder armazena em addons/kaykit_city_builder_bits/Assets/GLTF/, o Dungeon em assets/GLTF/.",
+  "description": "Cenários e ambientes. KayKit City Builder Bits (CC0) e KayKit Dungeon Remastered (CC0) fornecem componentes modulares. Caminhos confirmados por inspeção real do ZIP (via repositório Warlock-Domain/warlock que copiou os assets): pasta Assets/gltf com ficheiros nomeados building_A..H, road_straight, etc.",
   "assets": [
     {
       "id": "kaykit_city_tileset",
@@ -26,11 +26,11 @@
       "github_commit": "63976910ca04d16f0fc531b9c614244be8128713",
       "github_files": [],
       "download_status": "pending",
-      "notes": "Pack de 32+ assets urbanos CC0. Ficheiros GLTF confirmados no ZIP do commit 63976910: addons/kaykit_city_builder_bits/Assets/GLTF/. github_files=[] descarrega tudo o que passa os filtros de ALLOWED_EXTENSIONS. Para cenário de teste usar kaykit_city_scene_pack (seleção mínima). NÃO contém assets medievais — usar apenas para cenários apresentados como urbanos."
+      "notes": "Pack de 32+ assets urbanos CC0. Estrutura confirmada via Warlock-Domain/warlock (cópia arquivo-a-arquivo): os GLTF estão em addons/kaykit_city_builder_bits/Assets/gltf/ (minúsculas). github_files=[] descarrega tudo o que passa os filtros de ALLOWED_EXTENSIONS. Para cenário de teste usar kaykit_city_scene_pack."
     },
     {
       "id": "kaykit_city_scene_pack",
-      "name": "KayKit City Builder — Seleção para Cena de Teste",
+      "name": "KayKit City Builder — Seleção Mínima para Cena de Teste",
       "subcategory": "urban_modular",
       "source": "kaykit",
       "source_asset_id": "KayKit-City-Builder-Bits-1.0",
@@ -50,14 +50,16 @@
       "github_repo": "KayKit-Game-Assets/KayKit-City-Builder-Bits-1.0",
       "github_commit": "63976910ca04d16f0fc531b9c614244be8128713",
       "github_files": [
-        "addons/kaykit_city_builder_bits/Assets/GLTF/road_straight.gltf",
-        "addons/kaykit_city_builder_bits/Assets/GLTF/road_straight.bin",
-        "addons/kaykit_city_builder_bits/Assets/GLTF/building_large_corner.gltf",
-        "addons/kaykit_city_builder_bits/Assets/GLTF/building_large_corner.bin",
-        "addons/kaykit_city_builder_bits/Assets/Texture/colormap.png"
+        "addons/kaykit_city_builder_bits/Assets/gltf/road_straight.gltf",
+        "addons/kaykit_city_builder_bits/Assets/gltf/road_straight.bin",
+        "addons/kaykit_city_builder_bits/Assets/gltf/building_A.gltf",
+        "addons/kaykit_city_builder_bits/Assets/gltf/building_A.bin",
+        "addons/kaykit_city_builder_bits/Assets/gltf/building_B.gltf",
+        "addons/kaykit_city_builder_bits/Assets/gltf/building_B.bin",
+        "addons/kaykit_city_builder_bits/Assets/gltf/citybits_texture.png"
       ],
       "download_status": "pending",
-      "notes": "AVISO: os nomes acima (road_straight, building_large_corner) foram inferidos da estrutura típica do pack KayKit mas NÃO foram confirmados por leitura direta do ZIP. O workflow build-3d-scene.yml faz SCAN antes do download e usa os nomes reais encontrados. Se este asset falhar no SCAN com 'no_candidates_selected', executar library-manager com operation=scan e asset_id=kaykit_city_scene_pack para obter a lista real de ficheiros."
+      "notes": "CONFIRMADO: nomes de ficheiro verificados via Warlock-Domain/warlock que copiou os assets diretamente do ZIP do commit 63976910. Pasta real: addons/kaykit_city_builder_bits/Assets/gltf/ (minúsculas). Ficheiros: road_straight, building_A, building_B, textura citybits_texture.png. Nota: building_large_corner.gltf NÃO existe — os edifícios chamam-se building_A até building_H."
     },
     {
       "id": "kaykit_dungeon_tileset",
