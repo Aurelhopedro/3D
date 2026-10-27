@@ -1,0 +1,280 @@
+name: Gestão da Biblioteca de Personagens
+
+# Workflow dedicado a personagens.
+# NÃO substitui library-manager.yml nem outros workflows.
+#
+# Executar pelo telemóvel:
+#   Actions → "Gestão da Biblioteca de Personagens" → Run workflow
+#
+# Ações disponíveis:
+#   discover  — consultar fontes e produzir relatório de candidatos (sem descarregar)
+#   download  — descarregar personagens aprovadas (máx: max_assets)
+#   validate  — verificar integridade das personagens descarregadas
+#   catalog   — gerar catálogo global
+
+on:
+  workflow_dispatch:
+    inputs:
+      action:
+        description: 'Ação a executar'
+        type: choice
+        required: true
+        default: discover
+        options:
+          - discover
+          - download
+          - validate
+          - catalog
+      category:
+        description: 'Categoria (só relevante para download e validate)'
+        type: choice
+        required: false
+        default: characters
+        options:
+          - all
+          - characters
+      source_filter:
+        description: 'Filtrar por fonte (vazio = todas; ex: kaykit, 100avatars)'
+        type: string
+        required: false
+        default: ''
+      max_assets:
+        description: 'Máximo de assets a descarregar (1-5)'
+        type: string
+        required: false
+        default: '3'
+      dry_run:
+        description: 'Simular sem modificar ficheiros?'
+        type: boolean
+        required: false
+        default: false
+      asset_id:
+        description: 'ID específico de um asset (opcional; vazio = todos)'
+        type: string
+        required: false
+        default: ''
+
+permissions:
+  contents: write
+  actions: read
+
+concurrency:
+  group: character-library-${{ inputs.action }}
+  cancel-in-progress: false
+
+jobs:
+  character-library:
+    name: "${{ inputs.action }} | categoria: ${{ inputs.category }} | fonte: ${{ inputs.source_filter || 'todas' }}"
+    runs-on: ubuntu-24.04
+    timeout-minutes: 30
+
+    steps:
+      - uses: actions/checkout@v4
+
+      # ── Validar parâmetros ────────────────────────────────────────────────
+      - name: Validar parâmetros
+        env:
+          RAW_ACTION:      ${{ inputs.action }}
+          RAW_CATEGORY:    ${{ inputs.category }}
+          RAW_SOURCE:      ${{ inputs.source_filter }}
+          RAW_MAX:         ${{ inputs.max_assets }}
+          RAW_ASSET_ID:    ${{ inputs.asset_id }}
+          RAW_DRY:         ${{ inputs.dry_run }}
+        run: |
+          python3 - <<'PY'
+          import os, re, sys
+          def abort(msg):
+              print(f"ERRO: {msg}", file=sys.stderr); sys.exit(1)
+
+          action = os.environ["RAW_ACTION"].strip()
+          if action not in ("discover", "download", "validate", "catalog"):
+              abort(f"action inválida: {action!r}")
+
+          cat = os.environ["RAW_CATEGORY"].strip()
+          if cat not in ("all", "characters"):
+              abort(f"category inválida: {cat!r}")
+
+          src = os.environ["RAW_SOURCE"].strip()
+          if src and not re.fullmatch(r"[a-z0-9_]{0,32}", src):
+              abort(f"source_filter inválido: {src!r}")
+
+          max_a = os.environ["RAW_MAX"].strip()
+          if not max_a.isdigit() or not (1 <= int(max_a) <= 5):
+              abort(f"max_assets inválido (1-5): {max_a!r}")
+
+          aid = os.environ["RAW_ASSET_ID"].strip()
+          if aid and not re.fullmatch(r"[a-z0-9][a-z0-9_\-]{0,63}", aid):
+              abort(f"asset_id inválido: {aid!r}")
+
+          dry = os.environ["RAW_DRY"].strip().lower()
+
+          with open(os.environ["GITHUB_ENV"], "a") as f:
+              f.write(f"ACTION={action}\nCATEGORY={cat}\nSOURCE={src}\n"
+                      f"MAX_ASSETS={max_a}\nASSET_ID={aid}\nDRY_RUN={'true' if dry=='true' else 'false'}\n")
+          PY
+
+      # ── Testes de unidade (guarda de segurança) ───────────────────────────
+      - name: Testes automatizados
+        run: python3 -I -m unittest discover -s library/tests -v
+
+      # ========================================================
+      # AÇÃO: discover
+      # ========================================================
+      - name: Descoberta de candidatos
+        if: env.ACTION == 'discover'
+        run: |
+          DRY_FLAG=""
+          if [ "$DRY_RUN" = "true" ]; then DRY_FLAG="--dry-run"; fi
+          SRC_FLAG=""
+          if [ -n "$SOURCE" ]; then SRC_FLAG="--source $SOURCE"; fi
+          python3 -I library/tools/discover_characters.py $SRC_FLAG $DRY_FLAG
+
+      # ========================================================
+      # AÇÃO: download
+      # ========================================================
+      - name: Download de personagens aprovadas
+        if: env.ACTION == 'download'
+        run: |
+          set -euo pipefail
+          python3 -I library/tools/organize_assets.py
+          python3 -I library/tools/check_licenses.py --category "$CATEGORY"
+
+          ARGS=(
+            --mode download
+            --category "$CATEGORY"
+            --max-downloads "$MAX_ASSETS"
+            --max-total-mb 200
+          )
+          if [ -n "$ASSET_ID" ]; then ARGS+=(--asset-id "$ASSET_ID"); fi
+
+          python3 -I library/tools/download_assets.py "${ARGS[@]}"
+
+      - name: Commit das personagens descarregadas
+        if: env.ACTION == 'download' && env.DRY_RUN == 'false'
+        run: |
+          git config user.name  "github-actions[bot]"
+          git config user.email "41898282+github-actions[bot]@users.noreply.github.com"
+          git add -f library/assets/characters/ library/reports/ 2>/dev/null || true
+          if git diff --cached --quiet; then
+            echo "Nenhum ficheiro novo para commit."
+          else
+            N=$(git diff --cached --name-only | wc -l)
+            git commit -m "library: descarregar personagens — ${N} ficheiros (run ${{ github.run_id }})"
+            git push
+            echo "✅ Commit feito."
+          fi
+
+      # ========================================================
+      # AÇÃO: validate
+      # ========================================================
+      - name: Validar personagens descarregadas
+        if: env.ACTION == 'validate'
+        run: |
+          python3 -I library/tools/validate_assets.py --category "$CATEGORY"
+
+      # ========================================================
+      # AÇÃO: catalog
+      # ========================================================
+      - name: Gerar catálogo
+        if: env.ACTION == 'catalog'
+        run: |
+          python3 -I library/tools/build_catalog.py
+
+      - name: Commit do catálogo
+        if: env.ACTION == 'catalog' && env.DRY_RUN == 'false'
+        run: |
+          git config user.name  "github-actions[bot]"
+          git config user.email "41898282+github-actions[bot]@users.noreply.github.com"
+          git add library/catalog/ library/reports/ 2>/dev/null || true
+          if git diff --cached --quiet; then
+            echo "Catálogo sem alterações."
+          else
+            git commit -m "library: atualizar catálogo de personagens (run ${{ github.run_id }})"
+            git push
+          fi
+
+      # ── Sumário ──────────────────────────────────────────────────────────
+      - name: Escrever sumário
+        if: always()
+        run: |
+          python3 - <<'PY'
+          import json, os, pathlib, glob
+
+          action  = os.environ.get("ACTION", "?")
+          cat     = os.environ.get("CATEGORY", "?")
+          src     = os.environ.get("SOURCE", "todas")
+          dry_run = os.environ.get("DRY_RUN", "false") == "true"
+          summary = os.environ.get("GITHUB_STEP_SUMMARY", "")
+
+          lines = [
+              f"## Biblioteca de Personagens — `{action}`",
+              f"**Categoria:** `{cat}` | **Fonte:** `{src or 'todas'}` | **Dry-run:** {dry_run}",
+              "",
+          ]
+
+          # Procurar relatórios recentes
+          reports = sorted(glob.glob("library/reports/*.json"), key=os.path.getmtime, reverse=True)[:3]
+          for rp in reports:
+              try:
+                  data = json.loads(pathlib.Path(rp).read_text(encoding="utf-8"))
+                  name = pathlib.Path(rp).name
+                  if "results" in data:
+                      summary_data = data.get("summary", {})
+                      lines += [
+                          f"### `{name}`",
+                          f"- Entradas: {data.get('selected_entries', '?')}",
+                          f"- Descarregados: {data.get('downloaded_assets', '?')}",
+                      ]
+                      for k, v in summary_data.items():
+                          lines.append(f"- {k}: {v}")
+                  elif "candidates" in data:
+                      lines += [
+                          f"### `{name}` (descoberta)",
+                          f"- Descobertos: {data.get('total_discovered', '?')}",
+                          f"- Novos candidatos: {data.get('new_candidates', '?')}",
+                          f"- Bloqueados: {data.get('blocked_download', '?')} — {data.get('block_reason', '')}",
+                      ]
+                  lines.append("")
+              except Exception:
+                  pass
+
+          # Estado das personagens em library/assets/characters/
+          chars_dir = pathlib.Path("library/assets/characters")
+          if chars_dir.exists():
+              chars = [d.name for d in chars_dir.iterdir() if d.is_dir()]
+              lines += [
+                  "### Personagens em library/assets/characters/",
+                  f"Total: {len(chars)}",
+              ]
+              for c in sorted(chars):
+                  meta_path = chars_dir / c / "metadata.json"
+                  if meta_path.exists():
+                      try:
+                          m = json.loads(meta_path.read_text(encoding="utf-8"))
+                          lic = m.get("license", "?")
+                          status = m.get("download_status", "?")
+                          rigged = "rigged" if m.get("rigged") else "static"
+                          lines.append(f"- `{c}` — {lic} | {status} | {rigged}")
+                      except Exception:
+                          lines.append(f"- `{c}` — metadata inválida")
+                  else:
+                      lines.append(f"- `{c}` — sem metadata.json")
+
+          md = "\n".join(lines) + "\n"
+          print(md)
+          if summary:
+              with open(summary, "a", encoding="utf-8") as f:
+                  f.write(md)
+          PY
+
+      # ── Artefactos ───────────────────────────────────────────────────────
+      - name: Disponibilizar relatórios como artefactos
+        if: always()
+        uses: actions/upload-artifact@v4
+        with:
+          name: character-library-${{ inputs.action }}-${{ github.run_id }}
+          path: |
+            library/reports/
+            library/catalog/
+          if-no-files-found: warn
+          retention-days: 30
