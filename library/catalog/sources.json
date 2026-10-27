@@ -81,7 +81,7 @@
       "license_verified_on": null,
       "allowed_download_hosts": [],
       "status": "per_pack_license_check_required",
-      "notes": "Páginas de pacotes indicam CC0, mas há relatos secundários de licença diferente em alguns pacotes (possível QAL v1.0 desde 28/08/2026 com restrições de redistribuição). BLOQUEADO até verificar a licença aplicável a cada pacote específico."
+      "notes": "EXCLUÍDO por instrução explícita do proprietário do repositório. Não processar."
     },
     "makehuman": {
       "name": "MakeHuman Community",
@@ -115,17 +115,18 @@
       "name": "100Avatars / Polygonal Mind",
       "homepage": "https://github.com/ToxSam/open-source-avatars",
       "kind": "direct_url",
-      "resolver": "manual_pending",
+      "resolver": "direct_url",
       "content_license": "CC0-1.0",
       "content_license_verified": true,
       "license_evidence_url": "https://github.com/ToxSam/open-source-avatars/blob/main/data/projects.json",
       "license_verified_on": "2026-10-27",
-      "license_evidence_notes": "O campo 'license': 'CC0' nas coleções '100avatars-r1', '100avatars-r2' e '100avatars-r3' foi lido diretamente de projects.json. O README do repositório confirma: 'Original Collections (CC0) — 100Avatars Series — Our own free avatars, no attribution needed'. A nota do README diz explicitamente que o registo (metadados, código) é CC0, e os avatares por coleção têm a licença indicada em projects.json. Coleções comunitárias (VIPE Heroes, Grifters, ToxSam, etc.) têm licenças separadas; NÃO confundir com a coleção 100Avatars. Formato: VRM 0.x. Hospedagem: Arweave (arweave.net) — sistema de armazenamento permanente descentralizado.",
+      "license_evidence_notes": "O campo 'license': 'CC0' nas coleções '100avatars-r1', '100avatars-r2' e '100avatars-r3' foi lido diretamente de projects.json. O README do repositório confirma: 'Original Collections (CC0) — 100Avatars Series — Our own free avatars, no attribution needed'. Formato: VRM 0.x. Hospedagem: Arweave (arweave.net) — sistema de armazenamento permanente descentralizado.",
+      "api_hosts": [],
       "allowed_download_hosts": ["arweave.net"],
       "allowed_download_hosts_verified_on": "2026-10-27",
       "allowed_download_hosts_evidence": "Todos os model_file_url em 100avatars-r1.json e r2.json apontam para https://arweave.net/<id>. Arweave é um sistema de armazenamento permanente; os URLs são imutáveis por design do protocolo.",
-      "status": "license_verified_download_host_confirmed_resolver_pending",
-      "notes": "APROVADO para descoberta e metadados. Download BLOQUEADO até: (1) implementar resolver 'direct_url' que descarregue de arweave.net com verificação de sha256; (2) confirmar que .vrm está em ALLOWED_EXTENSIONS (não está — a extensão .vrm existe em common.py mas precisa de verificação). Formato VRM não é GLB/GLTF — requer importador específico no Blender (addon VRM4Blender ou importador nativo Blender 4.x+). NÃO descarregar automaticamente sem resolver estes pontos. Coleções excluídas desta fonte: vipe-heroes-genesis (CC-BY), e todas as NFT de redes blockchain que ainda não foram avaliadas individualmente.",
+      "status": "download_ready",
+      "notes": "RESOLVER ATIVO: direct_url implementado em download_assets.py v0.4.0. Formato VRM 0.x. Coleções aprovadas: 100avatars-r1, 100avatars-r2, 100avatars-r3. Coleções excluídas: vipe-heroes-genesis (CC-BY) e colecções NFT não avaliadas individualmente.",
       "discovery_url": "https://raw.githubusercontent.com/ToxSam/open-source-avatars/main/data/avatars/100avatars-r1.json",
       "discovery_url_r2": "https://raw.githubusercontent.com/ToxSam/open-source-avatars/main/data/avatars/100avatars-r2.json",
       "discovery_url_r3": "https://raw.githubusercontent.com/ToxSam/open-source-avatars/main/data/avatars/100avatars-r3.json"
