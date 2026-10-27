@@ -25,8 +25,8 @@
       "github_repo": "KayKit-Game-Assets/KayKit-Character-Pack-Adventures-1.0",
       "github_commit": "672074b73ba276876a19e8816ecdc5241817ab47",
       "github_files": ["Knight.glb"],
-      "download_status": "pending",
-      "notes": "GLB standalone com textura atlas embebida (1024x1024, PNG no bufferView). 41 joints. 75 animações partilhadas entre os 5 adventurers (mesmo rig). formats_wanted=[] porque o resolver github_zip devolve directamente o candidato ZIP sem precisar de filtro. Commit 672074b confirmado como imutável. SHA-256 Knight.glb esperado: 60428e3abc09ba83e595d256e3af8c5c976b46cdae599f0802fc82b4a3445168."
+      "download_status": "approved",
+      "notes": "GLB standalone com textura atlas embebida (1024x1024, PNG no bufferView). 41 joints. 75 animações partilhadas entre os 5 adventurers (mesmo rig). SHA-256 Knight.glb esperado: 60428e3abc09ba83e595d256e3af8c5c976b46cdae599f0802fc82b4a3445168."
     },
     {
       "id": "kaykit_adv_barbarian",
@@ -50,8 +50,8 @@
       "github_repo": "KayKit-Game-Assets/KayKit-Character-Pack-Adventures-1.0",
       "github_commit": "672074b73ba276876a19e8816ecdc5241817ab47",
       "github_files": ["Barbarian.glb"],
-      "download_status": "pending",
-      "notes": "GLB standalone com textura atlas embebida. 41 joints. formats_wanted=[] — ver nota do Knight. SHA-256 Barbarian.glb esperado: cefc311a0e10c7858b6141f5ada7e33268727564fb8ac1347aab97d000669cc6."
+      "download_status": "approved",
+      "notes": "GLB standalone com textura atlas embebida. 41 joints. SHA-256 Barbarian.glb esperado: cefc311a0e10c7858b6141f5ada7e33268727564fb8ac1347aab97d000669cc6."
     },
     {
       "id": "kaykit_adv_mage",
@@ -75,8 +75,8 @@
       "github_repo": "KayKit-Game-Assets/KayKit-Character-Pack-Adventures-1.0",
       "github_commit": "672074b73ba276876a19e8816ecdc5241817ab47",
       "github_files": ["Mage.glb"],
-      "download_status": "pending",
-      "notes": "GLB standalone com textura atlas embebida. 41 joints. formats_wanted=[] — ver nota do Knight. SHA-256 Mage.glb esperado: cf898585da33fab50c724d31605fb931eb2912e6d2280092141e98ca81ad507d."
+      "download_status": "approved",
+      "notes": "GLB standalone com textura atlas embebida. 41 joints. SHA-256 Mage.glb esperado: cf898585da33fab50c724d31605fb931eb2912e6d2280092141e98ca81ad507d."
     },
     {
       "id": "kaykit_adv_rogue",
@@ -100,8 +100,8 @@
       "github_repo": "KayKit-Game-Assets/KayKit-Character-Pack-Adventures-1.0",
       "github_commit": "672074b73ba276876a19e8816ecdc5241817ab47",
       "github_files": ["Rogue.glb"],
-      "download_status": "pending",
-      "notes": "GLB standalone com textura atlas embebida. 41 joints. formats_wanted=[] — ver nota do Knight. SHA-256 Rogue.glb esperado: e825437cd4d2ee9c1960b517a74a69101e33eb409ae7fa8cedc7134a998fbb7d."
+      "download_status": "approved",
+      "notes": "GLB standalone com textura atlas embebida. 41 joints. SHA-256 Rogue.glb esperado: e825437cd4d2ee9c1960b517a74a69101e33eb409ae7fa8cedc7134a998fbb7d."
     },
     {
       "id": "kaykit_adv_rogue_hooded",
@@ -125,15 +125,15 @@
       "github_repo": "KayKit-Game-Assets/KayKit-Character-Pack-Adventures-1.0",
       "github_commit": "672074b73ba276876a19e8816ecdc5241817ab47",
       "github_files": ["Rogue_Hooded.glb"],
-      "download_status": "pending",
-      "notes": "Variante com capuz do Rogue. GLB standalone com textura atlas embebida. 41 joints. formats_wanted=[] — ver nota do Knight. SHA-256 Rogue_Hooded.glb esperado: 93e6e25213009952276d9cf34f5d96a243767334c66f280db0433ddfabb91545."
+      "download_status": "approved",
+      "notes": "Variante com capuz do Rogue. GLB standalone com textura atlas embebida. 41 joints. SHA-256 Rogue_Hooded.glb esperado: 93e6e25213009952276d9cf34f5d96a243767334c66f280db0433ddfabb91545."
     },
     {
       "id": "100av_r1_001_crimsom",
       "name": "100Avatars R1 — Crimsom (#001)",
       "subcategory": "stylized_avatar_vrm",
       "source": "100avatars",
-      "source_asset_id": "100av_r1_001_crimsom",
+      "source_asset_id": "4c3942d1-6b67-434f-889c-138c81f7d79e",
       "source_url": "https://github.com/ToxSam/open-source-avatars",
       "author": "Polygonal Mind (polygonal.mind)",
       "license": "CC0-1.0",
@@ -147,19 +147,18 @@
       "selector": [],
       "rigged": true,
       "animated": false,
-      "download_status": "blocked_no_resolver",
+      "download_status": "approved",
       "source_model_url": "https://arweave.net/DUHQfXxfFPjlMzBoCyYD0Kuz7vwD7eZkT-9eOIJByzY",
       "source_thumbnail_url": "https://arweave.net/sTBkCTk1gyMaLZoqnm-98pUiDCq72D26aCEClOx_PEs",
       "source_collection": "100avatars-r1",
-      "source_avatar_id": "4c3942d1-6b67-434f-889c-138c81f7d79e",
-      "notes": "Formato VRM 0.x. BLOQUEADO: falta implementar resolver 'direct_url' para arweave.net e confirmar que Blender consegue importar VRM (.vrm não é nativo no Blender padrão — requer addon). SHA-256 não calculado (requer download real). Metadados registados a partir de 100avatars-r1.json."
+      "notes": "Formato VRM 0.x. Resolver direct_url ativo (arweave.net). Requer addon VRM no Blender para animação completa; o ficheiro .vrm pode ser importado como GLTF de base no Blender 4.x+."
     },
     {
       "id": "100av_r1_005_skull",
       "name": "100Avatars R1 — Skull (#005)",
       "subcategory": "stylized_avatar_vrm",
       "source": "100avatars",
-      "source_asset_id": "100av_r1_005_skull",
+      "source_asset_id": "79d66c3e-9bee-4c39-a9d3-aeb96124805c",
       "source_url": "https://github.com/ToxSam/open-source-avatars",
       "author": "Polygonal Mind (polygonal.mind)",
       "license": "CC0-1.0",
@@ -173,19 +172,18 @@
       "selector": [],
       "rigged": true,
       "animated": false,
-      "download_status": "blocked_no_resolver",
+      "download_status": "approved",
       "source_model_url": "https://arweave.net/oiwKG3vW0dVdUNWaidyQS8ZOxN3V_Qrz8__FW-SBwLc",
       "source_thumbnail_url": "https://arweave.net/w2tx7t1-2zvmlx4Zk1004RE1WrP7TlB9YygDWIe9wYM",
       "source_collection": "100avatars-r1",
-      "source_avatar_id": "79d66c3e-9bee-4c39-a9d3-aeb96124805c",
-      "notes": "Formato VRM 0.x. BLOQUEADO: mesmo motivo do Crimsom (#001). Personagem esqueleto — estilo fantastico."
+      "notes": "Formato VRM 0.x. Resolver direct_url ativo. Personagem esqueleto — estilo fantástico."
     },
     {
       "id": "100av_r1_021_polydancer",
       "name": "100Avatars R1 — Polydancer (#021)",
       "subcategory": "stylized_avatar_vrm",
       "source": "100avatars",
-      "source_asset_id": "100av_r1_021_polydancer",
+      "source_asset_id": "16aaf84a-3b1c-487f-9871-f9daabf4f504",
       "source_url": "https://github.com/ToxSam/open-source-avatars",
       "author": "Polygonal Mind (polygonal.mind)",
       "license": "CC0-1.0",
@@ -199,12 +197,11 @@
       "selector": [],
       "rigged": true,
       "animated": false,
-      "download_status": "blocked_no_resolver",
+      "download_status": "approved",
       "source_model_url": "https://arweave.net/jPOg-G0MPH55ZQmamFhT9f8cHn-hjeAQ0mRO5gWeKMQ",
       "source_thumbnail_url": "https://arweave.net/SUPfb9dzBeLUUpJaEjGPGDkEE_6PylCs3_wU_Em69LM",
       "source_collection": "100avatars-r1",
-      "source_avatar_id": "16aaf84a-3b1c-487f-9871-f9daabf4f504",
-      "notes": "Formato VRM 0.x. BLOQUEADO: mesmo motivo. Personagem dançarino estilizado — útil para demonstrações de animação uma vez que o resolver for implementado."
+      "notes": "Formato VRM 0.x. Resolver direct_url ativo. Personagem dançarino estilizado — útil para demonstrações de animação."
     },
     {
       "id": "quaternius_universal_base_characters_standard",
@@ -224,8 +221,8 @@
       "selector": [],
       "rigged": true,
       "animated": false,
-      "download_status": "blocked_license_unverified",
-      "notes": "BLOQUEADO. Possível QAL v1.0 desde 28/08/2026 com restrições de redistribuição. Verificar antes de activar."
+      "download_status": "excluded",
+      "notes": "EXCLUÍDO por instrução explícita do proprietário do repositório. Não processar."
     }
   ]
 }
