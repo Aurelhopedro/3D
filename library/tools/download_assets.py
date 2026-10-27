@@ -39,7 +39,7 @@ from common import (  # noqa: E402
     sha256_file, utcnow, validate_entry_shape,
 )
 
-TOOL_VERSION = "0.3.2"
+TOOL_VERSION = "0.4.0"
 USER_AGENT = "Aurelhopedro-3D-library/0.1 (+https://github.com/Aurelhopedro/3D)"
 URL_KEYS = ("url", "downloadLink", "rawLink")
 RESERVED_ROOT_NAMES = frozenset({"metadata.json", "license.txt"})
@@ -427,11 +427,65 @@ def resolve_zip_url(src: Dict[str, Any], entry: Dict[str, Any],
     }]
 
 
+def resolve_direct_url(src: Dict[str, Any], entry: Dict[str, Any],
+                       fetch: Callable[[str], Any]) -> List[Dict[str, Any]]:
+    """Resolver para ficheiros disponíveis directamente numa URL HTTPS.
+
+    Utilizado para modelos hospedados em arweave.net (100Avatars VRM).
+
+    A entrada no manifesto deve conter:
+      source_model_url : URL HTTPS do ficheiro (ex: https://arweave.net/<id>)
+      source_asset_id  : identificador único (para referência/log)
+      formats_wanted   : lista de formatos (ex: ["vrm"]) — usado para inferir extensão
+
+    Segurança:
+      - Apenas HTTPS permitido.
+      - Host validado contra allowed_download_hosts da fonte.
+      - Tamanho limitado por max_file_bytes do contexto.
+      - Extensão do ficheiro validada contra ALLOWED_EXTENSIONS.
+      - O nome do ficheiro é derivado do source_asset_id (nunca do URL externo).
+    """
+    model_url = entry.get("source_model_url", "")
+    if not model_url:
+        raise Blocked("blocked_direct_url_missing", "source_model_url ausente")
+    p = urllib.parse.urlparse(model_url)
+    if p.scheme != "https":
+        raise Blocked("blocked_url_scheme", p.scheme)
+
+    # Derivar extensão do URL ou de formats_wanted
+    path_ext = pathlib.PurePosixPath(p.path).suffix.lower()
+    formats_wanted = [f.lower() for f in (entry.get("formats_wanted") or [])]
+    if not path_ext:
+        # Sem extensão no URL: inferir a partir de formats_wanted
+        if "vrm" in formats_wanted:
+            path_ext = ".vrm"
+        elif "glb" in formats_wanted:
+            path_ext = ".glb"
+        else:
+            path_ext = ".bin"
+
+    if path_ext not in ALLOWED_EXTENSIONS:
+        raise Blocked("blocked_extension_not_allowed", path_ext)
+
+    # Nome do ficheiro: source_asset_id + extensão (nunca nomes do URL externo)
+    safe_id = re.sub(r"[^a-z0-9_\-]", "_", entry.get("source_asset_id", entry.get("id", "model")))
+    file_name = safe_id[:60] + path_ext
+
+    return [{
+        "url": model_url,
+        "keypath": ["direct_url", entry.get("source_asset_id", "")],
+        "size": None,
+        "md5": None,
+        "name": file_name,
+    }]
+
+
 RESOLVERS: Dict[str, Callable] = {
     "polyhaven": resolve_polyhaven,
     "ambientcg": resolve_ambientcg,
     "github_zip": resolve_github_zip,
     "zip_url": resolve_zip_url,
+    "direct_url": resolve_direct_url,
 }
 
 
