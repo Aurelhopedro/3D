@@ -1,6 +1,6 @@
 {
   "schema_version": 1,
-  "note": "Fontes avaliadas na Fase 1. Só 'content_license_verified: true' permite download automático. 'allowed_download_hosts' vazio significa que os hosts de download ainda NÃO foram confirmados: o SCAN reporta os hosts observados e o download fica bloqueado até serem adicionados aqui.",
+  "note": "Fontes avaliadas. Só 'content_license_verified: true' permite download automático. 'allowed_download_hosts' vazio significa que os hosts de download ainda NÃO foram confirmados: o SCAN reporta os hosts observados e o download fica bloqueado até serem adicionados aqui.",
   "sources": {
     "polyhaven": {
       "name": "Poly Haven",
@@ -94,9 +94,9 @@
       "license_verified_on": null,
       "allowed_download_hosts": ["files.makehumancommunity.org"],
       "allowed_download_hosts_verified_on": "2026-10-21",
-      "allowed_download_hosts_evidence": "URL confirmada empiricamente pelo Claude anterior: https://files.makehumancommunity.org/asset_packs/shirts01/shirts01_cc0.zip. O host files.makehumancommunity.org é o servidor oficial de assets do MakeHuman Community.",
+      "allowed_download_hosts_evidence": "URL confirmada empiricamente: https://files.makehumancommunity.org/asset_packs/shirts01/shirts01_cc0.zip. O host files.makehumancommunity.org é o servidor oficial de assets do MakeHuman Community.",
       "status": "license_per_asset_unverified",
-      "notes": "Pacotes de assets listados como CC0 ou CC-BY conforme o pacote. O resolver zip_url descarrega ZIPs directamente de files.makehumancommunity.org. ATENÇÃO: content_license_verified=false porque a licença tem de ser verificada por pacote — alguns materiais são CC-BY. Só adicionar entradas após confirmar CC0 individualmente."
+      "notes": "Pacotes de assets listados como CC0 ou CC-BY conforme o pacote. O resolver zip_url descarrega ZIPs directamente de files.makehumancommunity.org. ATENÇÃO: content_license_verified=false porque a licença tem de ser verificada por pacote. Só adicionar entradas após confirmar CC0 individualmente."
     },
     "khronos_gltf_samples": {
       "name": "Khronos glTF Sample Models",
@@ -110,6 +110,52 @@
       "allowed_download_hosts": [],
       "status": "licenses_vary_per_model",
       "notes": "Licenças variáveis por modelo; usar apenas para testes de validação e nunca presumir CC0."
+    },
+    "100avatars": {
+      "name": "100Avatars / Polygonal Mind",
+      "homepage": "https://github.com/ToxSam/open-source-avatars",
+      "kind": "direct_url",
+      "resolver": "manual_pending",
+      "content_license": "CC0-1.0",
+      "content_license_verified": true,
+      "license_evidence_url": "https://github.com/ToxSam/open-source-avatars/blob/main/data/projects.json",
+      "license_verified_on": "2026-10-27",
+      "license_evidence_notes": "O campo 'license': 'CC0' nas coleções '100avatars-r1', '100avatars-r2' e '100avatars-r3' foi lido diretamente de projects.json. O README do repositório confirma: 'Original Collections (CC0) — 100Avatars Series — Our own free avatars, no attribution needed'. A nota do README diz explicitamente que o registo (metadados, código) é CC0, e os avatares por coleção têm a licença indicada em projects.json. Coleções comunitárias (VIPE Heroes, Grifters, ToxSam, etc.) têm licenças separadas; NÃO confundir com a coleção 100Avatars. Formato: VRM 0.x. Hospedagem: Arweave (arweave.net) — sistema de armazenamento permanente descentralizado.",
+      "allowed_download_hosts": ["arweave.net"],
+      "allowed_download_hosts_verified_on": "2026-10-27",
+      "allowed_download_hosts_evidence": "Todos os model_file_url em 100avatars-r1.json e r2.json apontam para https://arweave.net/<id>. Arweave é um sistema de armazenamento permanente; os URLs são imutáveis por design do protocolo.",
+      "status": "license_verified_download_host_confirmed_resolver_pending",
+      "notes": "APROVADO para descoberta e metadados. Download BLOQUEADO até: (1) implementar resolver 'direct_url' que descarregue de arweave.net com verificação de sha256; (2) confirmar que .vrm está em ALLOWED_EXTENSIONS (não está — a extensão .vrm existe em common.py mas precisa de verificação). Formato VRM não é GLB/GLTF — requer importador específico no Blender (addon VRM4Blender ou importador nativo Blender 4.x+). NÃO descarregar automaticamente sem resolver estes pontos. Coleções excluídas desta fonte: vipe-heroes-genesis (CC-BY), e todas as NFT de redes blockchain que ainda não foram avaliadas individualmente.",
+      "discovery_url": "https://raw.githubusercontent.com/ToxSam/open-source-avatars/main/data/avatars/100avatars-r1.json",
+      "discovery_url_r2": "https://raw.githubusercontent.com/ToxSam/open-source-avatars/main/data/avatars/100avatars-r2.json",
+      "discovery_url_r3": "https://raw.githubusercontent.com/ToxSam/open-source-avatars/main/data/avatars/100avatars-r3.json"
+    },
+    "ara3dgen": {
+      "name": "Ara 3D Gen / olatunde85",
+      "homepage": "https://github.com/olatunde85/3d-gen",
+      "kind": "generator_tool",
+      "resolver": "manual_pending",
+      "content_license": null,
+      "content_license_verified": false,
+      "license_evidence_url": "https://github.com/olatunde85/3d-gen/blob/main/LICENSE",
+      "license_verified_on": null,
+      "allowed_download_hosts": [],
+      "status": "generator_not_downloadable_library",
+      "notes": "NÃO É UMA BIBLIOTECA DE ASSETS. É um gerador local de personagens realistas (Node.js + MakeHuman). O código é MIT. Os assets de base são MakeHuman CC0. O motion capture CMU é gratuito mas NÃO pode ser redistribuído sozinho. Os personagens GERADOS pelo utilizador pertencem ao utilizador ('Your exports: yours'). Para usar esta fonte: instalar localmente e gerar personagens — não há API pública nem ficheiros para descarregar de um servidor. IMPOSSÍVEL integrar no GitHub Actions sem instalar Node 20+ e descarregar ~420 MB de assets MakeHuman em cada execução. Registado aqui para documentação; não será implementado como resolver automático nesta fase.",
+      "license_separation_note": "MIT (código) ≠ CC0 (base MakeHuman) ≠ CMU (mocap). Os exports gerados pertencem ao utilizador mas os dados de base têm licenças distintas que é necessário respeitar."
+    },
+    "three_ws": {
+      "name": "three.ws",
+      "homepage": "https://github.com/nirholas/three.ws",
+      "kind": "generator_api",
+      "resolver": "manual_pending",
+      "content_license": null,
+      "content_license_verified": false,
+      "license_evidence_url": "https://github.com/nirholas/three.ws/blob/main/LICENSE",
+      "license_verified_on": null,
+      "allowed_download_hosts": [],
+      "status": "generator_api_not_a_static_library",
+      "notes": "NÃO É UMA BIBLIOTECA DE ASSETS. É uma plataforma de agentes 3D (Apache-2.0) com geração de modelos por IA (text→3D, image→3D). Os modelos gerados têm licença por determinar (dependem dos modelos de IA usados). O README menciona '$THREE on pump.fun' (criptomoeda) e pagamentos x402 — indica modelo comercial. Não há catálogo de assets estáticos CC0 transferíveis. REJEITADO como fonte de biblioteca nesta fase: sem catálogo estático verificável, sem licença CC0 confirmada nos assets gerados, sem API de download sem conta."
     }
   }
 }
