@@ -1,0 +1,128 @@
+name: Download Personagens Aprovados
+
+# Workflow dedicado a descarregar todos os personagens com download_status=approved.
+# Executa automaticamente quando há push ao manifesto de personagens.
+# Pode ser acionado manualmente para reprocessar.
+
+on:
+  push:
+    paths:
+      - 'library/manifests/characters.json'
+      - 'library/catalog/sources.json'
+      - 'library/tools/download_assets.py'
+  workflow_dispatch:
+
+permissions:
+  contents: write
+
+concurrency:
+  group: download-approved-characters
+  cancel-in-progress: false
+
+jobs:
+  download:
+    name: "Descarregar personagens aprovados — KayKit (5) + 100Avatars (3)"
+    runs-on: ubuntu-24.04
+    timeout-minutes: 30
+
+    steps:
+      - uses: actions/checkout@v4
+
+      - name: Testes automatizados (guarda de segurança)
+        run: python3 -I -m unittest discover -s library/tests -v
+
+      - name: Organizar pastas de assets
+        run: python3 -I library/tools/organize_assets.py
+
+      - name: Verificar licenças
+        run: python3 -I library/tools/check_licenses.py --category characters
+
+      - name: Download — KayKit (5 personagens GLB)
+        run: |
+          python3 -I library/tools/download_assets.py \
+            --mode download \
+            --category characters \
+            --max-downloads 5 \
+            --max-total-mb 200
+
+      - name: Download — 100Avatars (3 personagens VRM)
+        run: |
+          python3 -I library/tools/download_assets.py \
+            --mode download \
+            --category characters \
+            --max-downloads 3 \
+            --max-total-mb 200
+
+      - name: Registar resultados
+        if: always()
+        run: |
+          python3 - <<'PY'
+          import json, pathlib, glob, os
+
+          chars_dir = pathlib.Path("library/assets/characters")
+          chars = []
+          if chars_dir.exists():
+              for d in sorted(chars_dir.iterdir()):
+                  if d.is_dir() and not d.name.startswith("."):
+                      meta_path = d / "metadata.json"
+                      if meta_path.exists():
+                          try:
+                              m = json.loads(meta_path.read_text(encoding="utf-8"))
+                              chars.append({
+                                  "id": m.get("id"),
+                                  "name": m.get("name"),
+                                  "format": m.get("format"),
+                                  "license": m.get("license"),
+                                  "downloaded_at": m.get("downloaded_at"),
+                                  "files": len(m.get("files", [])),
+                                  "rigged": m.get("rigged"),
+                              })
+                          except Exception as e:
+                              chars.append({"id": d.name, "error": str(e)})
+
+          summary = os.environ.get("GITHUB_STEP_SUMMARY", "")
+          lines = [
+              "## Personagens instalados",
+              f"Total: **{len(chars)}**",
+              "",
+              "| ID | Nome | Formato | Licença | Ficheiros | Rigged |",
+              "|---|---|---|---|---|---|",
+          ]
+          for c in chars:
+              if "error" in c:
+                  lines.append(f"| `{c['id']}` | ❌ erro | — | — | — | — |")
+              else:
+                  fmt = ", ".join(c["format"] or []) if c["format"] else "?"
+                  lines.append(f"| `{c['id']}` | {c['name']} | {fmt} | {c['license']} | {c['files']} | {c['rigged']} |")
+
+          md = "\n".join(lines) + "\n"
+          print(md)
+          if summary:
+              with open(summary, "a", encoding="utf-8") as f:
+                  f.write(md)
+          PY
+
+      - name: Commit dos personagens descarregados
+        run: |
+          git config user.name  "github-actions[bot]"
+          git config user.email "41898282+github-actions[bot]@users.noreply.github.com"
+          git add -f library/assets/characters/ library/reports/ 2>/dev/null || true
+          if git diff --cached --quiet; then
+            echo "Nenhum ficheiro novo para commit."
+          else
+            N=$(git diff --cached --name-only | wc -l)
+            git commit -m "library: instalar personagens aprovados — ${N} ficheiros (run ${{ github.run_id }})"
+            git push
+            echo "✅ Commit feito com ${N} ficheiros."
+          fi
+
+      - name: Disponibilizar relatórios como artefactos
+        if: always()
+        uses: actions/upload-artifact@v4
+        with:
+          name: download-approved-characters-${{ github.run_id }}
+          path: |
+            library/reports/
+            library/catalog/
+          if-no-files-found: warn
+          retention-days: 30
