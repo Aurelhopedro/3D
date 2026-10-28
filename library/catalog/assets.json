@@ -4,7 +4,7 @@
       "animated": false,
       "category": "characters",
       "commercial_use": true,
-      "file_count": 0,
+      "file_count": 1,
       "formats": [
         "vrm"
       ],
@@ -12,21 +12,21 @@
       "license": "CC0-1.0",
       "license_verified": true,
       "name": "100Avatars R1 — Crimsom (#001)",
-      "path": null,
+      "path": "assets/characters/100av_r1_001_crimsom",
       "redistribution_allowed": true,
       "rigged": true,
       "source": "100avatars",
       "source_url": "https://github.com/ToxSam/open-source-avatars",
-      "status": "approved_pending_download",
+      "status": "downloaded",
       "subcategory": "stylized_avatar_vrm",
-      "total_bytes": 0,
+      "total_bytes": 1652200,
       "validation": null
     },
     {
       "animated": false,
       "category": "characters",
       "commercial_use": true,
-      "file_count": 0,
+      "file_count": 1,
       "formats": [
         "vrm"
       ],
@@ -34,21 +34,21 @@
       "license": "CC0-1.0",
       "license_verified": true,
       "name": "100Avatars R1 — Skull (#005)",
-      "path": null,
+      "path": "assets/characters/100av_r1_005_skull",
       "redistribution_allowed": true,
       "rigged": true,
       "source": "100avatars",
       "source_url": "https://github.com/ToxSam/open-source-avatars",
-      "status": "approved_pending_download",
+      "status": "downloaded",
       "subcategory": "stylized_avatar_vrm",
-      "total_bytes": 0,
+      "total_bytes": 1319524,
       "validation": null
     },
     {
       "animated": false,
       "category": "characters",
       "commercial_use": true,
-      "file_count": 0,
+      "file_count": 1,
       "formats": [
         "vrm"
       ],
@@ -56,34 +56,36 @@
       "license": "CC0-1.0",
       "license_verified": true,
       "name": "100Avatars R1 — Polydancer (#021)",
-      "path": null,
+      "path": "assets/characters/100av_r1_021_polydancer",
       "redistribution_allowed": true,
       "rigged": true,
       "source": "100avatars",
       "source_url": "https://github.com/ToxSam/open-source-avatars",
-      "status": "approved_pending_download",
+      "status": "downloaded",
       "subcategory": "stylized_avatar_vrm",
-      "total_bytes": 0,
+      "total_bytes": 1242088,
       "validation": null
     },
     {
       "animated": true,
       "category": "characters",
       "commercial_use": true,
-      "file_count": 0,
-      "formats": [],
+      "file_count": 1,
+      "formats": [
+        "glb"
+      ],
       "id": "kaykit_adv_barbarian",
       "license": "CC0-1.0",
       "license_verified": true,
       "name": "KayKit Adventurers — Barbarian",
-      "path": null,
+      "path": "assets/characters/kaykit_adv_barbarian",
       "redistribution_allowed": true,
       "rigged": true,
       "source": "kaykit",
       "source_url": "https://github.com/KayKit-Game-Assets/KayKit-Character-Pack-Adventures-1.0",
-      "status": "approved_pending_download",
+      "status": "downloaded",
       "subcategory": "stylized_fantasy",
-      "total_bytes": 0,
+      "total_bytes": 3613268,
       "validation": null
     },
     {
@@ -112,60 +114,66 @@
       "animated": true,
       "category": "characters",
       "commercial_use": true,
-      "file_count": 0,
-      "formats": [],
+      "file_count": 1,
+      "formats": [
+        "glb"
+      ],
       "id": "kaykit_adv_mage",
       "license": "CC0-1.0",
       "license_verified": true,
       "name": "KayKit Adventurers — Mage",
-      "path": null,
+      "path": "assets/characters/kaykit_adv_mage",
       "redistribution_allowed": true,
       "rigged": true,
       "source": "kaykit",
       "source_url": "https://github.com/KayKit-Game-Assets/KayKit-Character-Pack-Adventures-1.0",
-      "status": "approved_pending_download",
+      "status": "downloaded",
       "subcategory": "stylized_fantasy",
-      "total_bytes": 0,
+      "total_bytes": 3589240,
       "validation": null
     },
     {
       "animated": true,
       "category": "characters",
       "commercial_use": true,
-      "file_count": 0,
-      "formats": [],
+      "file_count": 1,
+      "formats": [
+        "glb"
+      ],
       "id": "kaykit_adv_rogue",
       "license": "CC0-1.0",
       "license_verified": true,
       "name": "KayKit Adventurers — Rogue",
-      "path": null,
+      "path": "assets/characters/kaykit_adv_rogue",
       "redistribution_allowed": true,
       "rigged": true,
       "source": "kaykit",
       "source_url": "https://github.com/KayKit-Game-Assets/KayKit-Character-Pack-Adventures-1.0",
-      "status": "approved_pending_download",
+      "status": "downloaded",
       "subcategory": "stylized_fantasy",
-      "total_bytes": 0,
+      "total_bytes": 3616284,
       "validation": null
     },
     {
       "animated": true,
       "category": "characters",
       "commercial_use": true,
-      "file_count": 0,
-      "formats": [],
+      "file_count": 1,
+      "formats": [
+        "glb"
+      ],
       "id": "kaykit_adv_rogue_hooded",
       "license": "CC0-1.0",
       "license_verified": true,
       "name": "KayKit Adventurers — Rogue (Hooded)",
-      "path": null,
+      "path": "assets/characters/kaykit_adv_rogue_hooded",
       "redistribution_allowed": true,
       "rigged": true,
       "source": "kaykit",
       "source_url": "https://github.com/KayKit-Game-Assets/KayKit-Character-Pack-Adventures-1.0",
-      "status": "approved_pending_download",
+      "status": "downloaded",
       "subcategory": "stylized_fantasy",
-      "total_bytes": 0,
+      "total_bytes": 3597652,
       "validation": null
     },
     {
@@ -663,7 +671,7 @@
       "validation": null
     }
   ],
-  "generated_at": "2026-10-28T19:58:10Z",
+  "generated_at": "2026-10-28T20:15:34Z",
   "schema_version": 1,
   "totals": {
     "assets": 32,
@@ -682,11 +690,11 @@
       "vehicles": 6
     },
     "by_status": {
-      "approved_pending_download": 25,
+      "approved_pending_download": 18,
       "blocked_license_unverified": 6,
-      "downloaded": 1
+      "downloaded": 8
     },
-    "downloaded": 1,
-    "downloaded_bytes": 3659532
+    "downloaded": 8,
+    "downloaded_bytes": 22289788
   }
 }
