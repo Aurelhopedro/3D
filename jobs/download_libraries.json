@@ -1,0 +1,14 @@
+{
+  "job_id": "download-libraries-001",
+  "_comment": "Este ficheiro é uma referência documentada. Para descarregar assets, usa o workflow 'Library Manager' no separador Actions — não o Blender Pipeline. O Library Manager lê library/manifests/*.json e library/catalog/sources.json.",
+  "workflow": "library-manager.yml",
+  "suggested_inputs": {
+    "operation": "download",
+    "category": "all",
+    "max_downloads": "3",
+    "max_total_mb": "100",
+    "asset_id": "",
+    "storage_mode": "temporary"
+  },
+  "notes": "Começa com operation=scan para ver o que está disponível. Depois usa download com max_downloads=1 para testar. Muda storage_mode para persistent para guardar os assets no repositório."
+}
