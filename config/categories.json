@@ -1,0 +1,102 @@
+{
+  "schema_version": 1,
+  "description": "Categorias de assets suportadas pela biblioteca. Mantido em sincronia com common.py.",
+  "categories": [
+    {
+      "id": "characters",
+      "label": "Personagens",
+      "description": "Personagens humanoides, criaturas e avatares. Inclui rigged e animated.",
+      "formats_preferred": ["glb", "gltf", "vrm", "fbx"],
+      "blender_importable": true,
+      "godot_importable": true
+    },
+    {
+      "id": "hair",
+      "label": "Cabelo",
+      "description": "Sistemas de cabelo, perucas e acessórios de cabelo.",
+      "formats_preferred": ["glb", "blend"],
+      "blender_importable": true,
+      "godot_importable": false
+    },
+    {
+      "id": "clothing",
+      "label": "Roupa e equipamento",
+      "description": "Vestuário, armaduras e acessórios equipáveis.",
+      "formats_preferred": ["glb", "fbx"],
+      "blender_importable": true,
+      "godot_importable": true
+    },
+    {
+      "id": "vehicles",
+      "label": "Veículos",
+      "description": "Carros, motas, aviões, barcos e outros meios de transporte.",
+      "formats_preferred": ["glb", "gltf"],
+      "blender_importable": true,
+      "godot_importable": true
+    },
+    {
+      "id": "environments",
+      "label": "Ambientes e cenários",
+      "description": "Tilesets modulares, cidades, dungeons, paisagens e cenários completos.",
+      "formats_preferred": ["glb", "gltf"],
+      "blender_importable": true,
+      "godot_importable": true
+    },
+    {
+      "id": "architecture",
+      "label": "Arquitetura",
+      "description": "Edifícios individuais, estruturas e elementos arquitetónicos.",
+      "formats_preferred": ["glb", "gltf", "obj"],
+      "blender_importable": true,
+      "godot_importable": true
+    },
+    {
+      "id": "furniture",
+      "label": "Mobiliário e interiores",
+      "description": "Mobiliário, decoração e elementos de interiores.",
+      "formats_preferred": ["glb", "gltf"],
+      "blender_importable": true,
+      "godot_importable": true
+    },
+    {
+      "id": "nature",
+      "label": "Natureza e terreno",
+      "description": "Árvores, plantas, rochas, terreno e elementos naturais.",
+      "formats_preferred": ["glb", "gltf"],
+      "blender_importable": true,
+      "godot_importable": true
+    },
+    {
+      "id": "animals",
+      "label": "Animais",
+      "description": "Animais domésticos, selvagens e criaturas não-humanoides.",
+      "formats_preferred": ["glb", "gltf"],
+      "blender_importable": true,
+      "godot_importable": true
+    },
+    {
+      "id": "animations",
+      "label": "Animações",
+      "description": "Clips de animação standalone (BVH, ações Blender).",
+      "formats_preferred": ["bvh", "blend"],
+      "blender_importable": true,
+      "godot_importable": false
+    },
+    {
+      "id": "materials",
+      "label": "Materiais e texturas PBR",
+      "description": "Materiais PBR com mapas de albedo, normal, roughness, metallic e AO.",
+      "formats_preferred": ["png", "exr", "hdr"],
+      "blender_importable": true,
+      "godot_importable": true
+    },
+    {
+      "id": "lighting",
+      "label": "Iluminação e HDR",
+      "description": "HDRIs, mapas de ambiente e configurações de iluminação.",
+      "formats_preferred": ["hdr", "exr"],
+      "blender_importable": true,
+      "godot_importable": true
+    }
+  ]
+}
