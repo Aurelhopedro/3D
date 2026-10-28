@@ -471,9 +471,12 @@ def resolve_direct_url(src: Dict[str, Any], entry: Dict[str, Any],
     safe_id = re.sub(r"[^a-z0-9_\-]", "_", entry.get("source_asset_id", entry.get("id", "model")))
     file_name = safe_id[:60] + path_ext
 
+    # O nome do ficheiro (com extensão) entra no keypath para que o filtro
+    # formats_wanted (ex.: "vrm") consiga selecionar este candidato: o URL do
+    # Arweave não tem extensão e, sem isto, o filtro descartava o único candidato.
     return [{
         "url": model_url,
-        "keypath": ["direct_url", entry.get("source_asset_id", "")],
+        "keypath": ["direct_url", entry.get("source_asset_id", ""), file_name],
         "size": None,
         "md5": None,
         "name": file_name,
