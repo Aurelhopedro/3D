@@ -1,0 +1,46 @@
+{
+  "animated": false,
+  "attribution": "Não exigida (CC0). Crédito voluntário a Polygonal Mind.",
+  "author": "Polygonal Mind (polygonal.mind)",
+  "category": "characters",
+  "commercial_use": true,
+  "download_status": "downloaded",
+  "downloaded_at": "2026-10-28T20:12:47Z",
+  "files": [
+    {
+      "path": "79d66c3e-9bee-4c39-a9d3-aeb96124805c.vrm",
+      "sha256": "9aafbe79901873e822f68f9c9f4b004964dbdae05b275584e10649ac8b5ef4ca",
+      "size": 1319524
+    }
+  ],
+  "fingerprint": "e023307355f648004886b53cd6b45cf51fa91e4d9c38469177537b3d1c3702b6",
+  "format": [
+    "vrm"
+  ],
+  "github_commit": null,
+  "github_repo": null,
+  "id": "100av_r1_005_skull",
+  "license": "CC0-1.0",
+  "license_url": "https://github.com/ToxSam/open-source-avatars/blob/main/data/projects.json",
+  "license_verified": true,
+  "license_verified_on": "2026-10-27",
+  "name": "100Avatars R1 — Skull (#005)",
+  "redistribution_allowed": true,
+  "rigged": true,
+  "skipped_extensions": [],
+  "source": "100avatars",
+  "source_asset_id": "79d66c3e-9bee-4c39-a9d3-aeb96124805c",
+  "source_files": [
+    {
+      "md5": null,
+      "path": "79d66c3e-9bee-4c39-a9d3-aeb96124805c.vrm",
+      "sha256": "9aafbe79901873e822f68f9c9f4b004964dbdae05b275584e10649ac8b5ef4ca",
+      "size": null,
+      "url": "https://arweave.net/oiwKG3vW0dVdUNWaidyQS8ZOxN3V_Qrz8__FW-SBwLc"
+    }
+  ],
+  "source_url": "https://github.com/ToxSam/open-source-avatars",
+  "subcategory": "stylized_avatar_vrm",
+  "tool_version": "0.4.0",
+  "version": null
+}

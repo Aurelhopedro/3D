@@ -1,0 +1,46 @@
+{
+  "animated": false,
+  "attribution": "Não exigida (CC0). Crédito voluntário a Polygonal Mind.",
+  "author": "Polygonal Mind (polygonal.mind)",
+  "category": "characters",
+  "commercial_use": true,
+  "download_status": "downloaded",
+  "downloaded_at": "2026-10-28T20:12:41Z",
+  "files": [
+    {
+      "path": "4c3942d1-6b67-434f-889c-138c81f7d79e.vrm",
+      "sha256": "20a8296d90d7c905bd0b2ce70efef8c86ae1f45fb90aef1a673ed86a9e0e3e76",
+      "size": 1652200
+    }
+  ],
+  "fingerprint": "9a499c719e5347aa21fafb854094234cfe9554e48a5c99211dbb68168cf96fbb",
+  "format": [
+    "vrm"
+  ],
+  "github_commit": null,
+  "github_repo": null,
+  "id": "100av_r1_001_crimsom",
+  "license": "CC0-1.0",
+  "license_url": "https://github.com/ToxSam/open-source-avatars/blob/main/data/projects.json",
+  "license_verified": true,
+  "license_verified_on": "2026-10-27",
+  "name": "100Avatars R1 — Crimsom (#001)",
+  "redistribution_allowed": true,
+  "rigged": true,
+  "skipped_extensions": [],
+  "source": "100avatars",
+  "source_asset_id": "4c3942d1-6b67-434f-889c-138c81f7d79e",
+  "source_files": [
+    {
+      "md5": null,
+      "path": "4c3942d1-6b67-434f-889c-138c81f7d79e.vrm",
+      "sha256": "20a8296d90d7c905bd0b2ce70efef8c86ae1f45fb90aef1a673ed86a9e0e3e76",
+      "size": null,
+      "url": "https://arweave.net/DUHQfXxfFPjlMzBoCyYD0Kuz7vwD7eZkT-9eOIJByzY"
+    }
+  ],
+  "source_url": "https://github.com/ToxSam/open-source-avatars",
+  "subcategory": "stylized_avatar_vrm",
+  "tool_version": "0.4.0",
+  "version": null
+}

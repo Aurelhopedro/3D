@@ -1,0 +1,11 @@
+Licença: CC0-1.0 (Creative Commons Zero v1.0 Universal)
+Texto legal: https://creativecommons.org/publicdomain/zero/1.0/
+Evidência da verificação: https://github.com/ToxSam/open-source-avatars/blob/main/data/projects.json
+Verificada em: 2026-10-27
+Fonte: https://github.com/ToxSam/open-source-avatars
+Autoria: Polygonal Mind (polygonal.mind)
+Obrigações de atribuição: Não exigida (CC0). Crédito voluntário a Polygonal Mind.
+Gerado pela biblioteca em: 2026-10-28T20:12:41Z
+
+Nota: este ficheiro é um aviso gerado automaticamente. O texto integral da licença
+não foi descarregado; consultar o URL do texto legal acima.

@@ -1,6 +1,6 @@
 # Relatório de licenças
 
-Gerado em 2026-10-28T19:57:17Z. Entradas: 9 · download automático permitido: 8 · bloqueadas: 1
+Gerado em 2026-10-28T20:12:31Z. Entradas: 9 · download automático permitido: 8 · bloqueadas: 1
 
 ## Fontes
 

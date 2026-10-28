@@ -1,0 +1,46 @@
+{
+  "animated": false,
+  "attribution": "Não exigida (CC0). Crédito voluntário a Polygonal Mind.",
+  "author": "Polygonal Mind (polygonal.mind)",
+  "category": "characters",
+  "commercial_use": true,
+  "download_status": "downloaded",
+  "downloaded_at": "2026-10-28T20:12:53Z",
+  "files": [
+    {
+      "path": "16aaf84a-3b1c-487f-9871-f9daabf4f504.vrm",
+      "sha256": "9bc28f2f2ab9d20aaa0da6c7b272a3f2363058414362bbfc176713c4585e4244",
+      "size": 1242088
+    }
+  ],
+  "fingerprint": "441718c1fa586372dc5a9c6f10dfa23a464c32193bebbb24911168230ec1cbab",
+  "format": [
+    "vrm"
+  ],
+  "github_commit": null,
+  "github_repo": null,
+  "id": "100av_r1_021_polydancer",
+  "license": "CC0-1.0",
+  "license_url": "https://github.com/ToxSam/open-source-avatars/blob/main/data/projects.json",
+  "license_verified": true,
+  "license_verified_on": "2026-10-27",
+  "name": "100Avatars R1 — Polydancer (#021)",
+  "redistribution_allowed": true,
+  "rigged": true,
+  "skipped_extensions": [],
+  "source": "100avatars",
+  "source_asset_id": "16aaf84a-3b1c-487f-9871-f9daabf4f504",
+  "source_files": [
+    {
+      "md5": null,
+      "path": "16aaf84a-3b1c-487f-9871-f9daabf4f504.vrm",
+      "sha256": "9bc28f2f2ab9d20aaa0da6c7b272a3f2363058414362bbfc176713c4585e4244",
+      "size": null,
+      "url": "https://arweave.net/jPOg-G0MPH55ZQmamFhT9f8cHn-hjeAQ0mRO5gWeKMQ"
+    }
+  ],
+  "source_url": "https://github.com/ToxSam/open-source-avatars",
+  "subcategory": "stylized_avatar_vrm",
+  "tool_version": "0.4.0",
+  "version": null
+}
