@@ -90,21 +90,23 @@
       "animated": true,
       "category": "characters",
       "commercial_use": true,
-      "file_count": 0,
-      "formats": [],
+      "file_count": 1,
+      "formats": [
+        "glb"
+      ],
       "id": "kaykit_adv_knight",
       "license": "CC0-1.0",
       "license_verified": true,
       "name": "KayKit Adventurers — Knight",
-      "path": null,
+      "path": "assets/characters/kaykit_adv_knight",
       "redistribution_allowed": true,
       "rigged": true,
       "source": "kaykit",
       "source_url": "https://github.com/KayKit-Game-Assets/KayKit-Character-Pack-Adventures-1.0",
-      "status": "approved_pending_download",
+      "status": "downloaded",
       "subcategory": "stylized_fantasy",
-      "total_bytes": 0,
-      "validation": null
+      "total_bytes": 3659532,
+      "validation": "ok"
     },
     {
       "animated": true,
@@ -661,7 +663,7 @@
       "validation": null
     }
   ],
-  "generated_at": "2026-10-28T19:42:44Z",
+  "generated_at": "2026-10-28T19:58:10Z",
   "schema_version": 1,
   "totals": {
     "assets": 32,
@@ -680,10 +682,11 @@
       "vehicles": 6
     },
     "by_status": {
-      "approved_pending_download": 26,
-      "blocked_license_unverified": 6
+      "approved_pending_download": 25,
+      "blocked_license_unverified": 6,
+      "downloaded": 1
     },
-    "downloaded": 0,
-    "downloaded_bytes": 0
+    "downloaded": 1,
+    "downloaded_bytes": 3659532
   }
 }

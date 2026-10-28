@@ -1,8 +1,8 @@
 # Catálogo da biblioteca 3D
 
-Gerado em 2026-10-28T19:42:44Z.
+Gerado em 2026-10-28T19:58:10Z.
 
-Recursos declarados: **32** · descarregados: **0** (0 bytes)
+Recursos declarados: **32** · descarregados: **1** (3659532 bytes)
 
 | Categoria | Recursos |
 |---|---|
@@ -21,5 +21,6 @@ Recursos declarados: **32** · descarregados: **0** (0 bytes)
 
 | Estado | Recursos |
 |---|---|
-| approved_pending_download | 26 |
+| approved_pending_download | 25 |
 | blocked_license_unverified | 6 |
+| downloaded | 1 |
