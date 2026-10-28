@@ -2,7 +2,7 @@
   "auto_download_licenses": [
     "CC0-1.0"
   ],
-  "category": "characters",
+  "category": "all",
   "entries": [
     {
       "auto_download_allowed": true,
@@ -111,9 +111,285 @@
       "problems": [],
       "reason": "blocked_license_unverified",
       "source": "quaternius"
+    },
+    {
+      "auto_download_allowed": false,
+      "category": "hair",
+      "id": "makehuman_hair_01_pack",
+      "license": "CC0-1.0",
+      "license_evidence_url": "https://static.makehumancommunity.org/assets/assetpacks/index.html",
+      "license_verified": false,
+      "needs_separate_review": false,
+      "problems": [],
+      "reason": "blocked_license_unverified",
+      "source": "makehuman"
+    },
+    {
+      "auto_download_allowed": true,
+      "category": "clothing",
+      "id": "polyhaven_fishermans_hat",
+      "license": "CC0-1.0",
+      "license_evidence_url": "https://polyhaven.com/a/fishermans_hat",
+      "license_verified": true,
+      "needs_separate_review": false,
+      "problems": [],
+      "reason": "ok",
+      "source": "polyhaven"
+    },
+    {
+      "auto_download_allowed": false,
+      "category": "clothing",
+      "id": "makehuman_shirts01",
+      "license": "CC0-1.0",
+      "license_evidence_url": "https://static.makehumancommunity.org/assets/assetpacks/index.html",
+      "license_verified": false,
+      "needs_separate_review": false,
+      "problems": [],
+      "reason": "blocked_license_unverified",
+      "source": "makehuman"
+    },
+    {
+      "auto_download_allowed": false,
+      "category": "clothing",
+      "id": "makehuman_dress01",
+      "license": "CC0-1.0",
+      "license_evidence_url": "https://static.makehumancommunity.org/assets/assetpacks/index.html",
+      "license_verified": false,
+      "needs_separate_review": false,
+      "problems": [],
+      "reason": "blocked_license_unverified",
+      "source": "makehuman"
+    },
+    {
+      "auto_download_allowed": false,
+      "category": "clothing",
+      "id": "makehuman_dress02",
+      "license": "CC0-1.0",
+      "license_evidence_url": "https://static.makehumancommunity.org/assets/assetpacks/index.html",
+      "license_verified": false,
+      "needs_separate_review": false,
+      "problems": [],
+      "reason": "blocked_license_unverified",
+      "source": "makehuman"
+    },
+    {
+      "auto_download_allowed": false,
+      "category": "clothing",
+      "id": "makehuman_dress03",
+      "license": "CC0-1.0",
+      "license_evidence_url": "https://static.makehumancommunity.org/assets/assetpacks/index.html",
+      "license_verified": false,
+      "needs_separate_review": false,
+      "problems": [],
+      "reason": "blocked_license_unverified",
+      "source": "makehuman"
+    },
+    {
+      "auto_download_allowed": true,
+      "category": "vehicles",
+      "id": "kaykit_city_car_taxi",
+      "license": "CC0-1.0",
+      "license_evidence_url": "https://creativecommons.org/publicdomain/zero/1.0/",
+      "license_verified": true,
+      "needs_separate_review": false,
+      "problems": [],
+      "reason": "ok",
+      "source": "kaykit"
+    },
+    {
+      "auto_download_allowed": true,
+      "category": "vehicles",
+      "id": "kaykit_city_car_sedan",
+      "license": "CC0-1.0",
+      "license_evidence_url": "https://creativecommons.org/publicdomain/zero/1.0/",
+      "license_verified": true,
+      "needs_separate_review": false,
+      "problems": [],
+      "reason": "ok",
+      "source": "kaykit"
+    },
+    {
+      "auto_download_allowed": true,
+      "category": "vehicles",
+      "id": "kaykit_city_car_hatchback",
+      "license": "CC0-1.0",
+      "license_evidence_url": "https://creativecommons.org/publicdomain/zero/1.0/",
+      "license_verified": true,
+      "needs_separate_review": false,
+      "problems": [],
+      "reason": "ok",
+      "source": "kaykit"
+    },
+    {
+      "auto_download_allowed": true,
+      "category": "vehicles",
+      "id": "kaykit_city_car_police",
+      "license": "CC0-1.0",
+      "license_evidence_url": "https://creativecommons.org/publicdomain/zero/1.0/",
+      "license_verified": true,
+      "needs_separate_review": false,
+      "problems": [],
+      "reason": "ok",
+      "source": "kaykit"
+    },
+    {
+      "auto_download_allowed": true,
+      "category": "vehicles",
+      "id": "kaykit_city_car_stationwagon",
+      "license": "CC0-1.0",
+      "license_evidence_url": "https://creativecommons.org/publicdomain/zero/1.0/",
+      "license_verified": true,
+      "needs_separate_review": false,
+      "problems": [],
+      "reason": "ok",
+      "source": "kaykit"
+    },
+    {
+      "auto_download_allowed": true,
+      "category": "vehicles",
+      "id": "polyhaven_covered_car",
+      "license": "CC0-1.0",
+      "license_evidence_url": "https://polyhaven.com/a/covered_car",
+      "license_verified": true,
+      "needs_separate_review": false,
+      "problems": [],
+      "reason": "ok",
+      "source": "polyhaven"
+    },
+    {
+      "auto_download_allowed": true,
+      "category": "environments",
+      "id": "kaykit_city_tileset",
+      "license": "CC0-1.0",
+      "license_evidence_url": "https://creativecommons.org/publicdomain/zero/1.0/",
+      "license_verified": true,
+      "needs_separate_review": false,
+      "problems": [],
+      "reason": "ok",
+      "source": "kaykit"
+    },
+    {
+      "auto_download_allowed": true,
+      "category": "environments",
+      "id": "kaykit_city_scene_pack",
+      "license": "CC0-1.0",
+      "license_evidence_url": "https://creativecommons.org/publicdomain/zero/1.0/",
+      "license_verified": true,
+      "needs_separate_review": false,
+      "problems": [],
+      "reason": "ok",
+      "source": "kaykit"
+    },
+    {
+      "auto_download_allowed": true,
+      "category": "environments",
+      "id": "kaykit_dungeon_tileset",
+      "license": "CC0-1.0",
+      "license_evidence_url": "https://creativecommons.org/publicdomain/zero/1.0/",
+      "license_verified": true,
+      "needs_separate_review": false,
+      "problems": [],
+      "reason": "ok",
+      "source": "kaykit"
+    },
+    {
+      "auto_download_allowed": true,
+      "category": "furniture",
+      "id": "polyhaven_wooden_stool_02",
+      "license": "CC0-1.0",
+      "license_evidence_url": "https://polyhaven.com/license",
+      "license_verified": true,
+      "needs_separate_review": false,
+      "problems": [],
+      "reason": "ok",
+      "source": "polyhaven"
+    },
+    {
+      "auto_download_allowed": true,
+      "category": "furniture",
+      "id": "polyhaven_ceramic_vase_03",
+      "license": "CC0-1.0",
+      "license_evidence_url": "https://polyhaven.com/license",
+      "license_verified": true,
+      "needs_separate_review": false,
+      "problems": [],
+      "reason": "ok",
+      "source": "polyhaven"
+    },
+    {
+      "auto_download_allowed": true,
+      "category": "furniture",
+      "id": "polyhaven_shelf_01",
+      "license": "CC0-1.0",
+      "license_evidence_url": "https://polyhaven.com/license",
+      "license_verified": true,
+      "needs_separate_review": false,
+      "problems": [],
+      "reason": "ok",
+      "source": "polyhaven"
+    },
+    {
+      "auto_download_allowed": true,
+      "category": "nature",
+      "id": "polyhaven_food_apple_01",
+      "license": "CC0-1.0",
+      "license_evidence_url": "https://polyhaven.com/license",
+      "license_verified": true,
+      "needs_separate_review": false,
+      "problems": [],
+      "reason": "ok",
+      "source": "polyhaven"
+    },
+    {
+      "auto_download_allowed": true,
+      "category": "nature",
+      "id": "ambientcg_3dtreestump001",
+      "license": "CC0-1.0",
+      "license_evidence_url": "https://docs.ambientcg.com/license/",
+      "license_verified": true,
+      "needs_separate_review": false,
+      "problems": [],
+      "reason": "ok",
+      "source": "ambientcg"
+    },
+    {
+      "auto_download_allowed": true,
+      "category": "materials",
+      "id": "ambientcg_pavingstones036",
+      "license": "CC0-1.0",
+      "license_evidence_url": "https://docs.ambientcg.com/license/",
+      "license_verified": true,
+      "needs_separate_review": false,
+      "problems": [],
+      "reason": "ok",
+      "source": "ambientcg"
+    },
+    {
+      "auto_download_allowed": true,
+      "category": "materials",
+      "id": "ambientcg_bricks092",
+      "license": "CC0-1.0",
+      "license_evidence_url": "https://docs.ambientcg.com/license/",
+      "license_verified": true,
+      "needs_separate_review": false,
+      "problems": [],
+      "reason": "ok",
+      "source": "ambientcg"
+    },
+    {
+      "auto_download_allowed": true,
+      "category": "lighting",
+      "id": "polyhaven_abandoned_factory_canteen_01",
+      "license": "CC0-1.0",
+      "license_evidence_url": "https://polyhaven.com/license",
+      "license_verified": true,
+      "needs_separate_review": false,
+      "problems": [],
+      "reason": "ok",
+      "source": "polyhaven"
     }
   ],
-  "generated_at": "2026-10-28T20:31:47Z",
+  "generated_at": "2026-10-28T20:32:28Z",
   "sources": [
     {
       "content_license": "CC0-1.0",
@@ -208,11 +484,11 @@
   ],
   "tool": "check_licenses",
   "totals": {
-    "auto_download_allowed": 8,
-    "blocked": 1,
+    "auto_download_allowed": 26,
+    "blocked": 6,
     "by_license": {
-      "CC0-1.0": 9
+      "CC0-1.0": 32
     },
-    "entries": 9
+    "entries": 32
   }
 }

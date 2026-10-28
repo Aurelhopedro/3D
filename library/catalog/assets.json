@@ -20,7 +20,7 @@
       "status": "downloaded",
       "subcategory": "stylized_avatar_vrm",
       "total_bytes": 1652200,
-      "validation": null
+      "validation": "ok"
     },
     {
       "animated": false,
@@ -42,7 +42,7 @@
       "status": "downloaded",
       "subcategory": "stylized_avatar_vrm",
       "total_bytes": 1319524,
-      "validation": null
+      "validation": "ok"
     },
     {
       "animated": false,
@@ -64,7 +64,7 @@
       "status": "downloaded",
       "subcategory": "stylized_avatar_vrm",
       "total_bytes": 1242088,
-      "validation": null
+      "validation": "ok"
     },
     {
       "animated": true,
@@ -86,7 +86,7 @@
       "status": "downloaded",
       "subcategory": "stylized_fantasy",
       "total_bytes": 3613268,
-      "validation": null
+      "validation": "ok"
     },
     {
       "animated": true,
@@ -130,7 +130,7 @@
       "status": "downloaded",
       "subcategory": "stylized_fantasy",
       "total_bytes": 3589240,
-      "validation": null
+      "validation": "ok"
     },
     {
       "animated": true,
@@ -152,7 +152,7 @@
       "status": "downloaded",
       "subcategory": "stylized_fantasy",
       "total_bytes": 3616284,
-      "validation": null
+      "validation": "ok"
     },
     {
       "animated": true,
@@ -174,7 +174,7 @@
       "status": "downloaded",
       "subcategory": "stylized_fantasy",
       "total_bytes": 3597652,
-      "validation": null
+      "validation": "ok"
     },
     {
       "animated": false,
@@ -671,7 +671,7 @@
       "validation": null
     }
   ],
-  "generated_at": "2026-10-28T20:15:34Z",
+  "generated_at": "2026-10-28T20:32:28Z",
   "schema_version": 1,
   "totals": {
     "assets": 32,
