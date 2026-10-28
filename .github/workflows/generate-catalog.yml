@@ -35,6 +35,8 @@ jobs:
     name: Gerar catálogo
     runs-on: ubuntu-24.04
     timeout-minutes: 10
+    # Em workflow_run, só executar se o Library Manager terminou com sucesso
+    if: ${{ github.event_name != 'workflow_run' || github.event.workflow_run.conclusion == 'success' }}
     steps:
       - uses: actions/checkout@v4
 
@@ -45,7 +47,7 @@ jobs:
         run: python3 -I library/tools/build_catalog.py
 
       - name: Gerar relatório de licenças
-        run: python3 -I library/tools/check_licenses.py --category all
+        run: python3 -I library/tools/check_licenses.py
 
       - name: Listar ferramentas geradoras (config/libraries.json)
         run: python3 -I sources/generators/library_manager.py --list
@@ -72,7 +74,10 @@ jobs:
   persist:
     name: Guardar catálogo no repositório
     needs: catalog
-    if: ${{ inputs.storage_mode == 'persistent' || github.event_name == 'workflow_run' }}
+    if: >
+      needs.catalog.result == 'success' &&
+      (inputs.storage_mode == 'persistent' ||
+       (github.event_name == 'workflow_run' && github.event.workflow_run.conclusion == 'success'))
     runs-on: ubuntu-24.04
     timeout-minutes: 10
     permissions:
@@ -80,18 +85,12 @@ jobs:
     steps:
       - uses: actions/checkout@v4
 
-      - uses: actions/download-artifact@v4
-        with:
-          name: catalog-${{ github.run_id }}
-          path: _catalog_incoming
-        continue-on-error: true
-
       - name: Regenerar e commitar catálogo
         run: |
           set -euo pipefail
           python3 -I -m unittest discover -s library/tests
           python3 -I library/tools/build_catalog.py
-          python3 -I library/tools/check_licenses.py --category all
+          python3 -I library/tools/check_licenses.py
 
           git config user.name "github-actions[bot]"
           git config user.email "41898282+github-actions[bot]@users.noreply.github.com"
