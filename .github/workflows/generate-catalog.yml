@@ -1,0 +1,110 @@
+name: Generate Catalog (Gerar Catálogo)
+
+# Gera o catálogo consolidado de assets: catalog/assets.json, catalog/licenses.json
+# e reports/catalog_summary.md. Combina o que está declarado nos manifestos
+# com o que foi realmente descarregado em library/assets/.
+#
+# Executar pelo telemóvel: separador Actions → "Generate Catalog" → Run workflow.
+
+on:
+  workflow_dispatch:
+    inputs:
+      storage_mode:
+        description: 'temporary = só artefacto; persistent = commit no repositório'
+        required: false
+        default: temporary
+        type: choice
+        options:
+          - temporary
+          - persistent
+
+  # Gerar automaticamente após downloads bem-sucedidos (via API/MCP)
+  workflow_run:
+    workflows: ["Library Manager (Biblioteca 3D)"]
+    types: [completed]
+
+permissions:
+  contents: read
+
+concurrency:
+  group: generate-catalog
+  cancel-in-progress: false
+
+jobs:
+  catalog:
+    name: Gerar catálogo
+    runs-on: ubuntu-24.04
+    timeout-minutes: 10
+    steps:
+      - uses: actions/checkout@v4
+
+      - name: Testes automatizados (guarda de segurança)
+        run: python3 -I -m unittest discover -s library/tests
+
+      - name: Gerar catálogo
+        run: python3 -I library/tools/build_catalog.py
+
+      - name: Gerar relatório de licenças
+        run: python3 -I library/tools/check_licenses.py --category all
+
+      - name: Listar ferramentas geradoras (config/libraries.json)
+        run: python3 -I sources/generators/library_manager.py --list
+
+      - name: Mostrar resumo
+        run: |
+          if [ -f library/reports/catalog_summary.md ]; then
+            cat library/reports/catalog_summary.md
+            cat library/reports/catalog_summary.md >> "$GITHUB_STEP_SUMMARY" || true
+          fi
+
+      - name: Publicar catálogo como artefacto
+        uses: actions/upload-artifact@v4
+        with:
+          name: catalog-${{ github.run_id }}
+          path: |
+            library/catalog/assets.json
+            library/catalog/licenses.json
+            library/reports/catalog_summary.md
+            library/reports/license_report.json
+          if-no-files-found: warn
+          retention-days: 30
+
+  persist:
+    name: Guardar catálogo no repositório
+    needs: catalog
+    if: ${{ inputs.storage_mode == 'persistent' || github.event_name == 'workflow_run' }}
+    runs-on: ubuntu-24.04
+    timeout-minutes: 10
+    permissions:
+      contents: write
+    steps:
+      - uses: actions/checkout@v4
+
+      - uses: actions/download-artifact@v4
+        with:
+          name: catalog-${{ github.run_id }}
+          path: _catalog_incoming
+        continue-on-error: true
+
+      - name: Regenerar e commitar catálogo
+        run: |
+          set -euo pipefail
+          python3 -I -m unittest discover -s library/tests
+          python3 -I library/tools/build_catalog.py
+          python3 -I library/tools/check_licenses.py --category all
+
+          git config user.name "github-actions[bot]"
+          git config user.email "41898282+github-actions[bot]@users.noreply.github.com"
+
+          git add -f \
+            library/catalog/assets.json \
+            library/catalog/licenses.json \
+            library/reports/catalog_summary.md \
+            library/reports/license_report.json 2>/dev/null || true
+
+          if git diff --cached --quiet; then
+            echo "Sem alterações no catálogo — nenhum commit criado."
+          else
+            git commit -m "catalog: regenerar após execução de biblioteca"
+            git push
+          fi
