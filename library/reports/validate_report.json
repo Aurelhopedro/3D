@@ -1,0 +1,20 @@
+{
+  "category": "characters",
+  "checked": 1,
+  "failed": 0,
+  "generated_at": "2026-10-28T19:57:18Z",
+  "note": null,
+  "ok": 1,
+  "results": [
+    {
+      "category": "characters",
+      "formats": [
+        "glb"
+      ],
+      "id": "kaykit_adv_knight",
+      "issues": [],
+      "ok": true
+    }
+  ],
+  "tool": "validate_assets"
+}

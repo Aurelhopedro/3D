@@ -1,0 +1,11 @@
+Licença: CC0-1.0 (Creative Commons Zero v1.0 Universal)
+Texto legal: https://creativecommons.org/publicdomain/zero/1.0/
+Evidência da verificação: https://creativecommons.org/publicdomain/zero/1.0/
+Verificada em: 2026-10-21
+Fonte: https://github.com/KayKit-Game-Assets/KayKit-Character-Pack-Adventures-1.0
+Autoria: Kay Lousberg (kaylousberg.com)
+Obrigações de atribuição: Não exigida (CC0). Crédito voluntário: Kay Lousberg / KayKit.
+Gerado pela biblioteca em: 2026-10-28T19:57:18Z
+
+Nota: este ficheiro é um aviso gerado automaticamente. O texto integral da licença
+não foi descarregado; consultar o URL do texto legal acima.
