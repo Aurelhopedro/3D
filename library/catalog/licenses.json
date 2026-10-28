@@ -1,0 +1,75 @@
+{
+  "auto_download_licenses": [
+    "CC0-1.0"
+  ],
+  "generated_at": "2026-10-28T19:37:51Z",
+  "schema_version": 1,
+  "sources": {
+    "100avatars": {
+      "content_license": "CC0-1.0",
+      "evidence_url": "https://github.com/ToxSam/open-source-avatars/blob/main/data/projects.json",
+      "verified": true,
+      "verified_on": "2026-10-27"
+    },
+    "ambientcg": {
+      "content_license": "CC0-1.0",
+      "evidence_url": "https://docs.ambientcg.com/license/",
+      "verified": true,
+      "verified_on": "2026-10-20"
+    },
+    "ara3dgen": {
+      "content_license": null,
+      "evidence_url": "https://github.com/olatunde85/3d-gen/blob/main/LICENSE",
+      "verified": false,
+      "verified_on": null
+    },
+    "kaykit": {
+      "content_license": "CC0-1.0",
+      "evidence_url": "https://creativecommons.org/publicdomain/zero/1.0/",
+      "verified": true,
+      "verified_on": "2026-10-21"
+    },
+    "kenney": {
+      "content_license": "CC0-1.0",
+      "evidence_url": "https://kenney.nl/support",
+      "verified": false,
+      "verified_on": null
+    },
+    "khronos_gltf_samples": {
+      "content_license": null,
+      "evidence_url": null,
+      "verified": false,
+      "verified_on": null
+    },
+    "makehuman": {
+      "content_license": "CC0-1.0",
+      "evidence_url": "https://static.makehumancommunity.org/assets/assetpacks/index.html",
+      "verified": false,
+      "verified_on": null
+    },
+    "polyhaven": {
+      "content_license": "CC0-1.0",
+      "evidence_url": "https://polyhaven.com/license",
+      "verified": true,
+      "verified_on": "2026-10-20"
+    },
+    "quaternius": {
+      "content_license": "CC0-1.0",
+      "evidence_url": "https://quaternius.itch.io/universal-base-characters",
+      "verified": false,
+      "verified_on": null
+    },
+    "three_ws": {
+      "content_license": null,
+      "evidence_url": "https://github.com/nirholas/three.ws/blob/main/LICENSE",
+      "verified": false,
+      "verified_on": null
+    }
+  },
+  "usage": {
+    "CC0-1.0": {
+      "count": 32,
+      "verified": 26
+    }
+  }
+}
