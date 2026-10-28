@@ -1,14 +1,14 @@
 {
   "asset_id": null,
   "category": "characters",
-  "downloaded_assets": 2,
-  "downloaded_bytes": 2561612,
-  "generated_at": "2026-10-28T20:12:53Z",
+  "downloaded_assets": 0,
+  "downloaded_bytes": 0,
+  "generated_at": "2026-10-28T20:31:47Z",
   "limits": {
-    "max_downloads": 3,
+    "max_downloads": 7,
     "max_file_mb": 50,
     "max_files_per_asset": 40,
-    "max_total_mb": 200
+    "max_total_mb": 150
   },
   "mode": "download",
   "results": [
@@ -49,22 +49,16 @@
       "status": "skipped_already_downloaded"
     },
     {
-      "bytes": 1319524,
       "category": "characters",
-      "files": 1,
       "id": "100av_r1_005_skull",
-      "skipped_extensions": [],
       "source": "100avatars",
-      "status": "downloaded"
+      "status": "skipped_already_downloaded"
     },
     {
-      "bytes": 1242088,
       "category": "characters",
-      "files": 1,
       "id": "100av_r1_021_polydancer",
-      "skipped_extensions": [],
       "source": "100avatars",
-      "status": "downloaded"
+      "status": "skipped_already_downloaded"
     },
     {
       "category": "characters",
@@ -76,8 +70,7 @@
   "selected_entries": 9,
   "summary": {
     "blocked_license_unverified": 1,
-    "downloaded": 2,
-    "skipped_already_downloaded": 6
+    "skipped_already_downloaded": 8
   },
   "tool": "download_assets",
   "tool_version": "0.4.0"

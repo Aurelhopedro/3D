@@ -1,17 +1,80 @@
 {
   "category": "characters",
-  "checked": 1,
+  "checked": 8,
   "failed": 0,
-  "generated_at": "2026-10-28T19:57:18Z",
+  "generated_at": "2026-10-28T20:31:47Z",
   "note": null,
-  "ok": 1,
+  "ok": 8,
   "results": [
+    {
+      "category": "characters",
+      "formats": [
+        "vrm"
+      ],
+      "id": "100av_r1_001_crimsom",
+      "issues": [],
+      "ok": true
+    },
+    {
+      "category": "characters",
+      "formats": [
+        "vrm"
+      ],
+      "id": "100av_r1_005_skull",
+      "issues": [],
+      "ok": true
+    },
+    {
+      "category": "characters",
+      "formats": [
+        "vrm"
+      ],
+      "id": "100av_r1_021_polydancer",
+      "issues": [],
+      "ok": true
+    },
+    {
+      "category": "characters",
+      "formats": [
+        "glb"
+      ],
+      "id": "kaykit_adv_barbarian",
+      "issues": [],
+      "ok": true
+    },
     {
       "category": "characters",
       "formats": [
         "glb"
       ],
       "id": "kaykit_adv_knight",
+      "issues": [],
+      "ok": true
+    },
+    {
+      "category": "characters",
+      "formats": [
+        "glb"
+      ],
+      "id": "kaykit_adv_mage",
+      "issues": [],
+      "ok": true
+    },
+    {
+      "category": "characters",
+      "formats": [
+        "glb"
+      ],
+      "id": "kaykit_adv_rogue",
+      "issues": [],
+      "ok": true
+    },
+    {
+      "category": "characters",
+      "formats": [
+        "glb"
+      ],
+      "id": "kaykit_adv_rogue_hooded",
       "issues": [],
       "ok": true
     }
