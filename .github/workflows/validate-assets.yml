@@ -1,0 +1,205 @@
+name: Validate Assets (Validar Assets)
+
+# Valida todos os assets descarregados: JSON, caminhos, hashes, licenças e formatos.
+# NÃO elimina assets automaticamente — apenas reporta problemas.
+#
+# Executar pelo telemóvel: separador Actions → "Validate Assets" → Run workflow.
+
+on:
+  workflow_dispatch:
+    inputs:
+      category:
+        description: 'Categoria a validar (all = todas)'
+        required: false
+        default: all
+        type: choice
+        options:
+          - all
+          - characters
+          - hair
+          - clothing
+          - vehicles
+          - environments
+          - architecture
+          - furniture
+          - nature
+          - animals
+          - animations
+          - materials
+          - lighting
+      check_json_configs:
+        description: 'Validar também os ficheiros JSON de configuração'
+        required: false
+        default: true
+        type: boolean
+
+  # Validar automaticamente após downloads
+  workflow_run:
+    workflows: ["Library Manager (Biblioteca 3D)"]
+    types: [completed]
+
+permissions:
+  contents: read
+
+concurrency:
+  group: validate-assets
+  cancel-in-progress: false
+
+jobs:
+  validate:
+    name: Validar assets — ${{ inputs.category || 'all' }}
+    runs-on: ubuntu-24.04
+    timeout-minutes: 20
+    steps:
+      - uses: actions/checkout@v4
+
+      - name: Testes automatizados (guarda de segurança)
+        run: python3 -I -m unittest discover -s library/tests
+
+      - name: Validar ficheiros JSON de configuração
+        if: ${{ inputs.check_json_configs != 'false' }}
+        run: |
+          python3 - <<'PY'
+          import json, pathlib, sys
+
+          configs = [
+              "config/blender.json",
+              "config/libraries.json",
+              "config/categories.json",
+              "library/catalog/sources.json",
+          ]
+          errors = []
+          for path in configs:
+              p = pathlib.Path(path)
+              if not p.exists():
+                  errors.append(f"Não encontrado: {path}")
+                  continue
+              try:
+                  json.loads(p.read_text(encoding="utf-8"))
+                  print(f"✅ {path}")
+              except json.JSONDecodeError as exc:
+                  errors.append(f"JSON inválido em {path}: {exc}")
+
+          manifests = list(pathlib.Path("library/manifests").glob("*.json"))
+          for m in sorted(manifests):
+              try:
+                  data = json.loads(m.read_text(encoding="utf-8"))
+                  if data.get("category") != m.stem:
+                      errors.append(f"Campo 'category' errado em {m.name}: esperado '{m.stem}'")
+                  else:
+                      print(f"✅ library/manifests/{m.name}")
+              except json.JSONDecodeError as exc:
+                  errors.append(f"JSON inválido em {m.name}: {exc}")
+
+          if errors:
+              print("\n❌ Erros encontrados:")
+              for e in errors:
+                  print(f"  - {e}")
+              sys.exit(1)
+          else:
+              print("\n✅ Todos os ficheiros JSON válidos.")
+          PY
+
+      - name: Validar assets descarregados
+        env:
+          CATEGORY: ${{ inputs.category || 'all' }}
+        run: |
+          python3 -I library/tools/validate_assets.py --category "$CATEGORY"
+
+      - name: Verificar caminhos referenciados no catálogo
+        run: |
+          python3 - <<'PY'
+          import json, pathlib, sys
+
+          cat_path = pathlib.Path("library/catalog/assets.json")
+          if not cat_path.exists():
+              print("Catálogo ainda não gerado — a saltar verificação de caminhos.")
+              sys.exit(0)
+
+          data = json.loads(cat_path.read_text(encoding="utf-8"))
+          errors = []
+          for asset in data.get("assets", []):
+              path = asset.get("path")
+              if path and asset.get("status") == "downloaded":
+                  full = pathlib.Path("library") / path
+                  if not full.exists():
+                      errors.append(f"Caminho não existe: library/{path} (id={asset['id']})")
+
+          if errors:
+              print(f"\n❌ {len(errors)} caminho(s) em falta:")
+              for e in errors[:20]:
+                  print(f"  - {e}")
+              if len(errors) > 20:
+                  print(f"  ... e {len(errors)-20} mais.")
+              sys.exit(1)
+          else:
+              print(f"✅ Todos os caminhos do catálogo existem.")
+          PY
+
+      - name: Verificar duplicados (hash SHA-256)
+        run: |
+          python3 - <<'PY'
+          import hashlib, pathlib, sys
+          from collections import defaultdict
+
+          base = pathlib.Path("library/assets")
+          hashes: dict = defaultdict(list)
+
+          for f in base.rglob("*"):
+              if not f.is_file() or f.name in ("metadata.json", "LICENSE.txt"):
+                  continue
+              h = hashlib.sha256()
+              try:
+                  with open(f, "rb") as fh:
+                      for chunk in iter(lambda: fh.read(1024*1024), b""):
+                          h.update(chunk)
+              except OSError:
+                  continue
+              hashes[h.hexdigest()].append(str(f.relative_to(pathlib.Path("library"))))
+
+          duplicates = {k: v for k, v in hashes.items() if len(v) > 1}
+          if duplicates:
+              print(f"⚠️  {len(duplicates)} grupo(s) de ficheiros duplicados:")
+              for h, paths in list(duplicates.items())[:10]:
+                  print(f"  SHA-256 {h[:16]}... → {paths}")
+          else:
+              print(f"✅ Nenhum duplicado encontrado ({len(hashes)} ficheiros verificados).")
+          PY
+
+      - name: Verificar ficheiros excessivamente grandes
+        run: |
+          python3 - <<'PY'
+          import pathlib, sys
+
+          MAX_MB = 50
+          base = pathlib.Path("library/assets")
+          large = []
+          for f in base.rglob("*"):
+              if f.is_file():
+                  mb = f.stat().st_size / (1024*1024)
+                  if mb > MAX_MB:
+                      large.append((mb, str(f.relative_to(pathlib.Path("library")))))
+
+          if large:
+              print(f"⚠️  {len(large)} ficheiro(s) acima de {MAX_MB} MB:")
+              for mb, path in sorted(large, reverse=True)[:10]:
+                  print(f"  {mb:.1f} MB — {path}")
+          else:
+              print(f"✅ Nenhum ficheiro acima de {MAX_MB} MB.")
+          PY
+
+      - name: Espaço usado pela biblioteca
+        if: always()
+        run: |
+          echo "### Armazenamento da biblioteca" >> "$GITHUB_STEP_SUMMARY"
+          du -sh library/assets library/catalog library/reports 2>/dev/null | \
+            sed 's/^/- /' >> "$GITHUB_STEP_SUMMARY" || true
+
+      - name: Publicar relatório de validação
+        if: always()
+        uses: actions/upload-artifact@v4
+        with:
+          name: validate-report-${{ github.run_id }}
+          path: library/reports/validate_report.json
+          if-no-files-found: ignore
+          retention-days: 14
