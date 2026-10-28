@@ -1,0 +1,32 @@
+{
+  "job_id": "generate-city-001",
+  "_comment": "Job de referência para geração de cena urbana com assets KayKit City Builder. Requer que os assets estejam descarregados primeiro (kaykit_city_scene_pack ou kaykit_city_tileset). A geração procedural completa de cidades (BPY-City) ainda não está integrada — ver config/libraries.json.",
+  "operation": "create_model",
+  "parameters": {
+    "type": "cube",
+    "size": 1,
+    "color": "#888888",
+    "_note": "Substituir por 'build_scene' quando o módulo estiver integrado. Por agora usa create_model como placeholder."
+  },
+  "outputs": {
+    "blend": true,
+    "glb": true,
+    "preview": true
+  },
+  "_future_operation": "build_scene",
+  "_future_parameters": {
+    "scene_type": "urban",
+    "assets": [
+      "library/assets/environments/kaykit_city_scene_pack/building_A.gltf",
+      "library/assets/environments/kaykit_city_scene_pack/building_B.gltf",
+      "library/assets/environments/kaykit_city_scene_pack/road_straight.gltf"
+    ],
+    "layout": "grid",
+    "grid_size": [3, 3],
+    "include_vehicles": true,
+    "vehicle_assets": [
+      "library/assets/vehicles/kaykit_city_car_taxi"
+    ]
+  },
+  "_status": "placeholder — aguarda integração de build_scene e download dos assets KayKit City"
+}
