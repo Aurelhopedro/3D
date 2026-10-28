@@ -1,0 +1,173 @@
+name: Sync Libraries (Sincronizar Bibliotecas)
+
+# Sincroniza fontes de assets e ferramentas geradoras declaradas em config/libraries.json.
+# Para assets estáticos CC0, usa o Library Manager (library-manager.yml).
+# Este workflow trata de ferramentas geradoras e addons Blender.
+#
+# Executar pelo telemóvel: separador Actions → "Sync Libraries" → Run workflow.
+
+on:
+  workflow_dispatch:
+    inputs:
+      library_id:
+        description: 'ID de uma biblioteca específica (vazio = verificar todas as ativas)'
+        required: false
+        default: ''
+        type: string
+      dry_run:
+        description: 'Apenas verificar, sem modificar ficheiros'
+        required: false
+        default: true
+        type: boolean
+
+  schedule:
+    # Verifica semanalmente às 03:00 UTC de segunda-feira (conservador)
+    - cron: '0 3 * * 1'
+
+permissions:
+  contents: read
+
+concurrency:
+  group: sync-libraries
+  cancel-in-progress: false
+
+jobs:
+  sync:
+    name: Verificar bibliotecas
+    runs-on: ubuntu-24.04
+    timeout-minutes: 15
+    steps:
+      - uses: actions/checkout@v4
+
+      - name: Validar parâmetros
+        env:
+          RAW_LIBRARY_ID: ${{ inputs.library_id }}
+        run: |
+          python3 - <<'PY'
+          import os, re, sys
+          lid = os.environ.get("RAW_LIBRARY_ID", "").strip()
+          if lid and not re.fullmatch(r"[a-z0-9][a-z0-9_]{0,63}", lid):
+              sys.exit(f"library_id inválido: {lid!r}")
+          with open(os.environ["GITHUB_ENV"], "a") as f:
+              f.write(f"LIB_ID={lid}\n")
+          PY
+
+      - name: Ler manifesto de bibliotecas
+        id: read_manifest
+        run: |
+          python3 - <<'PY'
+          import json, pathlib, os, sys
+
+          manifest = pathlib.Path("config/libraries.json")
+          if not manifest.exists():
+              sys.exit("config/libraries.json não encontrado")
+
+          data = json.loads(manifest.read_text(encoding="utf-8"))
+          libs = data.get("libraries", [])
+          target_id = os.environ.get("LIB_ID", "").strip()
+
+          if target_id:
+              libs = [l for l in libs if l["id"] == target_id]
+              if not libs:
+                  sys.exit(f"Biblioteca '{target_id}' não encontrada em config/libraries.json")
+
+          enabled = [l for l in libs if l.get("enabled")]
+          registered = [l for l in libs if not l.get("enabled")]
+
+          print(f"Total declarado: {len(libs)}")
+          print(f"Ativas: {len(enabled)}")
+          print(f"Registadas (inativas): {len(registered)}")
+
+          summary = os.environ.get("GITHUB_STEP_SUMMARY", "")
+          if summary:
+              with open(summary, "a") as f:
+                  f.write("## Sync Libraries — Relatório\n\n")
+                  f.write(f"Bibliotecas no manifesto: **{len(libs)}** | Ativas: **{len(enabled)}** | Inativas: **{len(registered)}**\n\n")
+                  f.write("| ID | Nome | Tipo | Estado | Ativa |\n")
+                  f.write("|---|---|---|---|---|\n")
+                  for l in libs:
+                      ativo = "✅" if l.get("enabled") else "❌"
+                      f.write(f"| `{l['id']}` | {l['name']} | {l.get('kind','?')} | {l.get('status','?')} | {ativo} |\n")
+                  f.write("\n")
+
+                  if registered:
+                      f.write("### Bibliotecas inativas (requerem verificação manual)\n\n")
+                      for l in registered:
+                          lic = l.get("code_license") or l.get("content_license") or "desconhecida"
+                          verified = l.get("code_license_verified") or l.get("content_license_verified")
+                          icon = "⚠️" if not verified else "✅"
+                          f.write(f"- **{l['name']}** ({l['id']}) — licença: {lic} {icon}\n")
+                          if l.get("notes"):
+                              f.write(f"  - {l['notes'][:200]}\n")
+                      f.write("\n")
+          PY
+
+      - name: Verificar integridade do manifesto
+        run: |
+          python3 - <<'PY'
+          import json, pathlib, sys
+
+          errors = []
+
+          # Verificar config/libraries.json
+          try:
+              data = json.loads(pathlib.Path("config/libraries.json").read_text(encoding="utf-8"))
+              libs = data.get("libraries", [])
+              ids = [l.get("id") for l in libs]
+              duplicates = [i for i in ids if ids.count(i) > 1]
+              if duplicates:
+                  errors.append(f"IDs duplicados em libraries.json: {duplicates}")
+          except json.JSONDecodeError as exc:
+              errors.append(f"JSON inválido em config/libraries.json: {exc}")
+
+          # Verificar config/categories.json
+          try:
+              json.loads(pathlib.Path("config/categories.json").read_text(encoding="utf-8"))
+          except (FileNotFoundError, json.JSONDecodeError) as exc:
+              errors.append(f"Problema em config/categories.json: {exc}")
+
+          # Verificar config/blender.json
+          try:
+              json.loads(pathlib.Path("config/blender.json").read_text(encoding="utf-8"))
+          except (FileNotFoundError, json.JSONDecodeError) as exc:
+              errors.append(f"Problema em config/blender.json: {exc}")
+
+          if errors:
+              for e in errors:
+                  print(f"ERRO: {e}", file=sys.stderr)
+              sys.exit(1)
+          else:
+              print("✅ Todos os ficheiros de configuração válidos.")
+          PY
+
+      - name: Aviso: bibliotecas com licença não verificada
+        run: |
+          python3 - <<'PY'
+          import json, pathlib, sys
+
+          data = json.loads(pathlib.Path("config/libraries.json").read_text(encoding="utf-8"))
+          libs = data.get("libraries", [])
+          unverified = [
+              l for l in libs
+              if not l.get("code_license_verified") and not l.get("content_license_verified")
+              and l.get("enabled")
+          ]
+          if unverified:
+              print("⚠️  AVISO: Bibliotecas ATIVAS com licença não verificada:")
+              for l in unverified:
+                  print(f"  - {l['id']} ({l['name']})")
+              sys.exit(1)
+          else:
+              print("✅ Nenhuma biblioteca ativa com licença não verificada.")
+          PY
+
+      - name: Relatório final
+        if: always()
+        run: |
+          echo "Sync Libraries concluído."
+          echo "Para ver o relatório completo: separador Actions → esta execução → Summary."
+          echo ""
+          echo "Próximos passos para integrar uma biblioteca:"
+          echo "1. Verificar a licença no repositório original."
+          echo "2. Atualizar config/libraries.json (enabled: true, licença verificada)."
+          echo "3. Criar ou adaptar um workflow para instalação do addon/script."
