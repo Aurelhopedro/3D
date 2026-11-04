@@ -14,12 +14,37 @@ jobs:
     steps:
       - uses: actions/checkout@v4
 
-      - name: Restaurar Blender 5.2.1
-        uses: actions/cache/restore@v4
+      - name: Ler configuração do Blender
+        id: cfg
+        run: |
+          python3 - <<'PY' >> "$GITHUB_OUTPUT"
+          import json
+          c=json.load(open('config/blender.json'))
+          for k in ('blender_version','blender_series','linux_x64_filename','checksum_filename'):
+              print(f'{k}={c[k]}')
+          PY
+
+      - name: Restaurar Blender do cache
+        id: blender-cache
+        uses: actions/cache@v4
         with:
           path: blender_bin
-          key: blender-5.2.1-linux-x64
-          fail-on-cache-miss: true
+          key: blender-${{ steps.cfg.outputs.blender_version }}-linux-x64
+
+      - name: Descarregar Blender se não estiver em cache
+        if: steps.blender-cache.outputs.cache-hit != 'true'
+        run: |
+          set -euo pipefail
+          BASE="https://download.blender.org/release/Blender${{ steps.cfg.outputs.blender_series }}"
+          FILE="${{ steps.cfg.outputs.linux_x64_filename }}"
+          SHA="${{ steps.cfg.outputs.checksum_filename }}"
+          curl -fL --retry 3 -o "$FILE" "$BASE/$FILE"
+          curl -fL --retry 3 -o "$SHA" "$BASE/$SHA"
+          EXPECTED=$(grep -F "$FILE" "$SHA" | awk '{print $1}')
+          test -n "$EXPECTED"
+          echo "$EXPECTED  $FILE" | sha256sum -c -
+          mkdir -p blender_bin
+          tar -xJf "$FILE" -C blender_bin --strip-components=1
 
       - name: Gerar calça cargo (geometria + materiais + detalhes)
         env:
