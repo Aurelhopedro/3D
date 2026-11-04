@@ -1,0 +1,57 @@
+name: Roupa - Calça Cargo Marfim (Hombaka Song)
+
+on:
+  workflow_dispatch:
+
+permissions:
+  contents: read
+
+jobs:
+  generate:
+    runs-on: ubuntu-latest
+    timeout-minutes: 45
+
+    steps:
+      - uses: actions/checkout@v4
+
+      - name: Restaurar Blender 5.2.1
+        uses: actions/cache/restore@v4
+        with:
+          path: blender_bin
+          key: blender-5.2.1-linux-x64
+          fail-on-cache-miss: true
+
+      - name: Gerar calça cargo (geometria + materiais + detalhes)
+        env:
+          CARGO_OUTPUT: ${{ github.workspace }}/output/cargo-pants
+        run: >
+          ./blender_bin/blender
+          --background
+          --factory-startup
+          --python-exit-code 1
+          --python scripts/garments/create_cargo_pants.py
+
+      - name: Verificar ficheiros e relatórios produzidos
+        if: always()
+        run: |
+          echo "=== Ficheiros em output/cargo-pants ==="
+          ls -lh output/cargo-pants/ 2>/dev/null || echo "Directorio vazio ou inexistente"
+          echo ""
+          echo "=== Resumo (validation_report.md) ==="
+          cat output/cargo-pants/validation_report.md 2>/dev/null || echo "Resumo nao gerado"
+
+      - name: Publicar artefactos
+        if: always()
+        uses: actions/upload-artifact@v4
+        with:
+          name: cargo-pants-marfim
+          path: |
+            output/cargo-pants/cargo_pants.blend
+            output/cargo-pants/cargo_pants.glb
+            output/cargo-pants/validation_report.md
+            output/cargo-pants/view_front.png
+            output/cargo-pants/view_back.png
+            output/cargo-pants/view_side.png
+            output/cargo-pants/view_detail_pocket.png
+            output/cargo-pants/view_detail_star.png
+          if-no-files-found: warn
