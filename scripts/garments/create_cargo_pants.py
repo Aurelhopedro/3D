@@ -1,7 +1,7 @@
 # ============================================================
 # CALÇA CARGO MARFIM — ESTILO URBANO / Y2K
 # Projeto: Hombaka Song
-# Versão: 1.3 — compatível Blender 5.2
+# Versão: 1.4 — compatível Blender 5.2
 # ============================================================
 
 import bpy
@@ -317,15 +317,14 @@ bpy.ops.wm.save_as_mainfile(filepath=blend_path)
 print(f"[OK] .blend: {blend_path}")
 
 # ─────────────────────── EXPORTAR GLB ────────────────────────
-# Blender 5.2: export_colors foi removido da API gltf.
-# Usar apenas parâmetros válidos na 5.2.
+# Blender 5.2: export_colors e export_normals foram removidos.
+# Normals e vertex colors exportam automaticamente com export_materials='EXPORT'.
 glb_path = os.path.join(OUT, "cargo_pants.glb")
 bpy.ops.export_scene.gltf(
     filepath=glb_path,
     export_format='GLB',
     export_apply=True,
     export_materials='EXPORT',
-    export_normals=True,
 )
 print(f"[OK] .glb: {glb_path}")
 
@@ -345,7 +344,7 @@ render_view(cam_front, "view_detail_star.png")
 # ─────────────────────── RELATÓRIO ───────────────────────────
 report = {
     "garment": "Calça Cargo Marfim — Hombaka Song",
-    "version": "1.3",
+    "version": "1.4",
     "blender": bpy.app.version_string,
     "medidas_cm": {
         "cintura": 76, "anca": 104, "comprimento_total": 102,
@@ -369,6 +368,6 @@ with open(os.path.join(OUT, "cargo_pants_report.json"), "w") as f:
     json.dump(report, f, indent=2, ensure_ascii=False)
 
 print("=" * 60)
-print("CALÇA CARGO v1.3 — CONCLUÍDO")
+print("CALÇA CARGO v1.4 — CONCLUÍDO")
 print(f"Saída: {OUT}")
 print("=" * 60)
