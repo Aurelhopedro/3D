@@ -1,7 +1,7 @@
 # ============================================================
 # CALÇA CARGO MARFIM — ESTILO URBANO / Y2K
 # Projeto: Hombaka Song
-# Versão: 1.2 — compatível Blender 5.2
+# Versão: 1.3 — compatível Blender 5.2
 # ============================================================
 
 import bpy
@@ -62,7 +62,6 @@ scene.frame_end   = CFG["cloth_steps"]
 # ─────────────────────── MATERIAIS ───────────────────────────
 def make_mat(name, color, rough=0.86, metallic=0.0):
     m = bpy.data.materials.new(name)
-    # Blender 5.2: aceder aos nós directamente sem activar use_nodes
     b = m.node_tree.nodes.get("Principled BSDF")
     if b:
         b.inputs["Base Color"].default_value = color
@@ -258,8 +257,6 @@ for side, cx in [("Esq", -0.165), ("Dir", 0.165)]:
               (CFG["hem_flat"]*0.96, 0.21, 0.052), MAT_FABRIC, 0.005)
 
 # ─────────────────────── CLOTH SIM ───────────────────────────
-# Blender 5.2: use_self_collision está em cloth.collision_settings,
-# não em cloth.settings
 if CFG["cloth_sim"]:
     for obj in list(col.objects):
         if obj.name.startswith("Perna_") and obj.type == 'MESH':
@@ -268,7 +265,6 @@ if CFG["cloth_sim"]:
             bpy.ops.object.modifier_add(type='CLOTH')
             cloth = obj.modifiers["Cloth"]
 
-            # Propriedades físicas do tecido
             cs = cloth.settings
             cs.quality               = CFG["cloth_quality"]
             cs.mass                  = 0.42
@@ -282,12 +278,10 @@ if CFG["cloth_sim"]:
             cs.bending_damping       = 0.5
             cs.air_damping           = 1.0
 
-            # Auto-colisão — objecto correcto no Blender 5.2
             cc = cloth.collision_settings
             cc.use_self_collision  = True
             cc.self_distance_min   = 0.004
 
-            # Pin group na cintura
             vg = obj.vertex_groups.new(name="Pin_Cintura")
             top_v = [v.index for v in obj.data.vertices
                      if v.co.z > L_LEG * 0.92]
@@ -323,6 +317,8 @@ bpy.ops.wm.save_as_mainfile(filepath=blend_path)
 print(f"[OK] .blend: {blend_path}")
 
 # ─────────────────────── EXPORTAR GLB ────────────────────────
+# Blender 5.2: export_colors foi removido da API gltf.
+# Usar apenas parâmetros válidos na 5.2.
 glb_path = os.path.join(OUT, "cargo_pants.glb")
 bpy.ops.export_scene.gltf(
     filepath=glb_path,
@@ -330,7 +326,6 @@ bpy.ops.export_scene.gltf(
     export_apply=True,
     export_materials='EXPORT',
     export_normals=True,
-    export_colors=True,
 )
 print(f"[OK] .glb: {glb_path}")
 
@@ -350,7 +345,7 @@ render_view(cam_front, "view_detail_star.png")
 # ─────────────────────── RELATÓRIO ───────────────────────────
 report = {
     "garment": "Calça Cargo Marfim — Hombaka Song",
-    "version": "1.2",
+    "version": "1.3",
     "blender": bpy.app.version_string,
     "medidas_cm": {
         "cintura": 76, "anca": 104, "comprimento_total": 102,
@@ -374,6 +369,6 @@ with open(os.path.join(OUT, "cargo_pants_report.json"), "w") as f:
     json.dump(report, f, indent=2, ensure_ascii=False)
 
 print("=" * 60)
-print("CALÇA CARGO v1.2 — CONCLUÍDO")
+print("CALÇA CARGO v1.3 — CONCLUÍDO")
 print(f"Saída: {OUT}")
 print("=" * 60)
