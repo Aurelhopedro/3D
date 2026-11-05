@@ -1,4 +1,4 @@
-name: MPFB B9 - Experimental — Olhos Nativos do MPFB
+name: B9 v3 — Personagem Medieval Realista (mhcore + Blender)
 
 on:
   workflow_dispatch:
@@ -13,11 +13,12 @@ permissions:
 jobs:
   generate:
     runs-on: ubuntu-latest
-    timeout-minutes: 45
+    timeout-minutes: 60
 
     steps:
       - uses: actions/checkout@v4
 
+      # ── 1. RESTAURAR BLENDER ───────────────────────────────────────────────
       - name: Restaurar Blender 5.2.1
         uses: actions/cache/restore@v4
         with:
@@ -25,21 +26,113 @@ jobs:
           key: blender-5.2.1-linux-x64
           fail-on-cache-miss: true
 
-      - name: Descarregar MPFB
-        run: curl -fL --retry 3 --retry-delay 5 -o mpfb2.zip https://files.makehumancommunity.org/plugins/mpfb2-latest.zip
-
-      - name: Verificar ZIP do MPFB
+      # ── 2. INSTALAR mhcore (MakeHuman headless, sem Qt/OpenGL) ───────────
+      - name: Instalar mhcore (MakeHuman headless)
         run: |
-          if [ ! -f mpfb2.zip ] || [ ! -s mpfb2.zip ]; then
-            echo "Erro: mpfb2.zip nao foi descarregado ou esta vazio." >&2
-            exit 1
-          fi
-          echo "MPFB ZIP: $(du -sh mpfb2.zip | cut -f1)"
+          pip install --quiet makehuman-mcp
+          python3 -c "import mhcore; print('mhcore OK:', mhcore.__version__ if hasattr(mhcore,'__version__') else 'instalado')" \
+            || { echo "ERRO: mhcore nao instalou correctamente"; exit 1; }
 
-      - name: Gerar modelo B9
+      # ── 3. GERAR MESH HUMANO FEMININO REALISTA (sem Blender, sem GUI) ─────
+      - name: Gerar personagem feminina com mhcore
+        run: |
+          mkdir -p output/b9-v3
+          python3 - <<'PYEOF'
+          import mhcore, json, sys
+          from pathlib import Path
+
+          out = Path("output/b9-v3")
+          out.mkdir(parents=True, exist_ok=True)
+
+          print("== Criando personagem feminina com mhcore ==")
+          h = mhcore.new_human()
+
+          # Configuração feminina jovem adulta
+          h.set_gender(1.0)       # 1.0 = totalmente feminina
+          h.set_age(0.35)         # jovem adulta (~25-30 anos)
+          h.set_weight(0.45)      # peso normal-magra
+          h.set_muscle(0.40)      # músculo normal
+          h.set_height(0.65)      # alta
+
+          # Morfologias para rosto expressivo
+          mods = {m for m in h.list_modifiers()}
+          for target_mod, val in [
+              ("head/head-oval",          0.3),
+              ("head/head-height",        0.2),
+              ("head/head-width",        -0.1),
+              ("eyes/eyes-size",          0.2),
+              ("eyes/eyes-distance",     -0.1),
+              ("nose/nose-width",        -0.2),
+              ("nose/nose-length",        0.1),
+              ("mouth/mouth-width",      -0.1),
+              ("mouth/mouth-lips-upper-middle-height", 0.15),
+              ("chin/chin-width",        -0.15),
+              ("chin/chin-height",       -0.1),
+              ("breast/breast-size",      0.5),
+              ("pelvis/pelvis-size",      0.3),
+              ("hip/hip-waist",          -0.2),
+          ]:
+              if target_mod in mods:
+                  try:
+                      h.apply_modifier(target_mod, val)
+                      print(f"  OK: {target_mod} = {val}")
+                  except Exception as e:
+                      print(f"  SKIP: {target_mod}: {e}")
+
+          # Esqueleto + pose neutra (T-pose)
+          try:
+              import mhcore
+              rig_paths = h.list_available("rigs") if hasattr(h, 'list_available') else []
+              if rig_paths:
+                  h.set_skeleton(rig_paths[0])
+                  print(f"  Skeleton: {rig_paths[0]}")
+          except Exception as e:
+              print(f"  Skeleton skip: {e}")
+
+          # Olhos
+          try:
+              eyes = h.list_available("eyes")
+              if eyes:
+                  h.equip_eyes(eyes[0])
+                  print(f"  Eyes: {eyes[0]}")
+          except Exception as e:
+              print(f"  Eyes skip: {e}")
+
+          # Exportar OBJ
+          obj_path = out / "female_mhcore.obj"
+          h.export(str(obj_path))
+          if not obj_path.exists():
+              raise RuntimeError(f"OBJ nao exportado: {obj_path}")
+
+          size_kb = obj_path.stat().st_size // 1024
+          print(f"== OBJ gerado: {obj_path.name} ({size_kb} KB) ==")
+
+          # Salvar relatório mhcore
+          meta = {
+              "status": "ok",
+              "obj_path": str(obj_path),
+              "obj_size_kb": size_kb,
+          }
+          (out / "mhcore_meta.json").write_text(json.dumps(meta, indent=2))
+          PYEOF
+
+      # ── 4. VERIFICAR OBJ ──────────────────────────────────────────────────
+      - name: Verificar OBJ gerado
+        run: |
+          OBJ="output/b9-v3/female_mhcore.obj"
+          if [ ! -f "$OBJ" ] || [ ! -s "$OBJ" ]; then
+            echo "AVISO: OBJ nao gerado pelo mhcore — Blender usara mesh programático" >&2
+            echo "MHCORE_OBJ=" >> "$GITHUB_ENV"
+          else
+            echo "OBJ OK: $(du -sh "$OBJ" | cut -f1)"
+            echo "MHCORE_OBJ=$GITHUB_WORKSPACE/$OBJ" >> "$GITHUB_ENV"
+          fi
+
+      # ── 5. BLENDER: IMPORTAR OBJ + MATERIAIS PBR + RENDER ────────────────
+      - name: Render com Blender (Cycles CPU)
         env:
-          MPFB_ZIP: ${{ github.workspace }}/mpfb2.zip
-          MPFB_OUTPUT: ${{ github.workspace }}/output/mpfb-b9
+          MHCORE_OBJ:    ${{ env.MHCORE_OBJ }}
+          MHCORE_OUTPUT: ${{ github.workspace }}/output/b9-v3
         run: >
           ./blender_bin/blender
           --background
@@ -47,36 +140,44 @@ jobs:
           --python-exit-code 1
           --python scripts/characters/create_female_b9.py
 
+      # ── 6. VERIFICAR RESULTADOS ───────────────────────────────────────────
       - name: Verificar ficheiros produzidos
         if: always()
         run: |
-          echo "=== Ficheiros em output/mpfb-b9 ==="
-          ls -lh output/mpfb-b9/ 2>/dev/null || echo "Directorio vazio ou inexistente"
+          echo "=== Ficheiros em output/b9-v3 ==="
+          ls -lh output/b9-v3/ 2>/dev/null || echo "Directorio vazio"
           echo ""
-          echo "=== Relatorio JSON ==="
-          cat output/mpfb-b9/b9_report.json 2>/dev/null \
-            | python3 -c "import sys,json; r=json.load(sys.stdin); \
-              print('Status:     ', r.get('status','?')); \
-              print('Eye method: ', r.get('eye_method','?')); \
-              print('Eye centers:', json.dumps(r.get('eye_centers_used',{}), ensure_ascii=False)); \
-              print('Validations:', json.dumps({k: v.get('pass') for k,v in r.get('validations',{}).items()}, ensure_ascii=False)); \
-              print('Renders:    ', list(r.get('renders',{}).keys())); \
-              print('Limitations:'); [print(' -', l) for l in r.get('visual_limitations',[])]" \
-            || cat output/mpfb-b9/b9_report.json 2>/dev/null \
-            || echo "Relatorio nao gerado"
+          echo "=== Relatório ==="
+          python3 -c "
+          import json, sys
+          r = json.load(open('output/b9-v3/b9_report.json'))
+          print('Status  :', r.get('status'))
+          print('Blender :', r.get('blender'))
+          c = r.get('components', {})
+          print('Body src:', c.get('body_source'))
+          print('Vertices:', c.get('body_vertices'))
+          print('Clothing:', c.get('clothing',{}).get('pieces'), 'peças')
+          print('Hair    :', c.get('hair',{}).get('strands'), 'mechas')
+          print('Renders :', list(r.get('renders',{}).keys()))
+          if 'error' in r:
+              print('ERRO    :', r['error'][:300])
+          " 2>/dev/null || cat output/b9-v3/b9_report.json 2>/dev/null || echo "Sem relatório"
 
-      - name: Publicar artefactos B9
+      # ── 7. PUBLICAR ARTEFACTOS ────────────────────────────────────────────
+      - name: Publicar artefactos B9 v3
         if: always()
         uses: actions/upload-artifact@v4
         with:
-          name: mpfb-b9-experimental-olhos-nativos
+          name: b9-v3-personagem-medieval-realista
           path: |
-            output/mpfb-b9/b9_report.json
-            output/mpfb-b9/female_b9.blend
-            output/mpfb-b9/female_b9.glb
-            output/mpfb-b9/b9_01_full_front.png
-            output/mpfb-b9/b9_02_face_front.png
-            output/mpfb-b9/b9_03_face_side.png
-            output/mpfb-b9/b9_04_face_quarter.png
-            output/mpfb-b9/b9_05_eyes_closeup.png
+            output/b9-v3/b9_report.json
+            output/b9-v3/mhcore_meta.json
+            output/b9-v3/female_mhcore.obj
+            output/b9-v3/female_b9.blend
+            output/b9-v3/female_b9.glb
+            output/b9-v3/b9_01_full_front.png
+            output/b9-v3/b9_02_face_front.png
+            output/b9-v3/b9_03_face_side.png
+            output/b9-v3/b9_04_face_quarter.png
           if-no-files-found: warn
+          retention-days: 30
